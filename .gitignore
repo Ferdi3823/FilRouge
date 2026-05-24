@@ -1,5 +1,13 @@
 __pycache__/
 *.pyc
 .env
+
+# ignore datasets lourds
+data/raw/
+data/external/
+
+# garder processed si léger
+# data/processed/
+
 outputs/
 .ipynb_checkpoints
