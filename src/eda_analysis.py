@@ -207,63 +207,53 @@ def analyse_t2(df_cand):
 
 
 # ──────────────────────────────────────────────────────────────────
-# 4. Corrélation démographie × abstention par département
+# 4. Corrélation démographie × abstention — graphique unique
 # ──────────────────────────────────────────────────────────────────
 def analyse_demo_vs_abstention(df_demo):
     print("\n[4] Corrélation démographie × abstention...")
 
     # T1 uniquement, sans DOM/TOM (pop manquante)
     df = df_demo[(df_demo["tour"] == 1) & df_demo["pop_ens_total"].notna()].copy()
+    data = df[["pct_jeunes", "taux_abstention"]].dropna()
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    vars_demo = [
-        ("pct_seniors", "% de seniors (60+)", "#e74c3c"),
-        ("pct_jeunes", "% de jeunes (0–39 ans)", "#27ae60"),
-        ("pct_actifs", "% d'actifs (40–59 ans)", "#2980b9"),
-    ]
+    # Tous les points : tous depts × toutes années, sans distinction
+    ax.scatter(data["pct_jeunes"], data["taux_abstention"],
+               alpha=0.35, s=18, color="#4a90d9", edgecolors="none")
 
-    for ax, (var, label, color) in zip(axes, vars_demo):
-        for annee, grp in df.groupby("annee"):
-            ax.scatter(grp[var], grp["taux_abstention"], alpha=0.3, s=12,
-                       color=PALETTE_ANNEES[annee], label=str(annee))
+    # Ligne de tendance globale
+    z = np.polyfit(data["pct_jeunes"], data["taux_abstention"], 1)
+    p = np.poly1d(z)
+    xs = np.linspace(data["pct_jeunes"].min(), data["pct_jeunes"].max(), 200)
+    ax.plot(xs, p(xs), color="#e74c3c", linewidth=2.5, linestyle="--", label="Tendance globale")
 
-        # Ligne de tendance globale
-        corr_data = df[[var, "taux_abstention"]].dropna()
-        if len(corr_data) > 10:
-            z = np.polyfit(corr_data[var], corr_data["taux_abstention"], 1)
-            p = np.poly1d(z)
-            xs = np.linspace(corr_data[var].min(), corr_data[var].max(), 100)
-            ax.plot(xs, p(xs), color=color, linewidth=2, linestyle="--")
-            r = corr_data[var].corr(corr_data["taux_abstention"])
-            ax.set_title(f"{label}\nr = {r:.2f}", fontsize=10)
+    r = data["pct_jeunes"].corr(data["taux_abstention"])
+    n = len(data)
 
-        ax.set_xlabel(label)
-        if ax == axes[0]:
-            ax.set_ylabel("Taux d'abstention (%)")
-        ax.grid(alpha=0.2)
+    ax.set_title(
+        f"% de jeunes (0–39 ans) vs taux d'abstention par département\n"
+        f"Présidentielles T1, 1995–2022 — tous départements confondus   (r = {r:.2f})",
+        fontsize=12,
+    )
+    ax.set_xlabel("% de la population âgée de 0 à 39 ans")
+    ax.set_ylabel("Taux d'abstention (%)")
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.2)
+    ax.annotate(f"n = {n} observations (6 scrutins × ~96 depts)",
+                xy=(0.98, 0.04), xycoords="axes fraction",
+                ha="right", fontsize=8, color="grey")
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    # Déduplication des labels
-    seen = set()
-    unique_h, unique_l = [], []
-    for h, l in zip(handles, labels):
-        if l not in seen:
-            unique_h.append(h)
-            unique_l.append(l)
-            seen.add(l)
-    fig.legend(unique_h, unique_l, loc="lower center", ncol=6, fontsize=8,
-               title="Année", bbox_to_anchor=(0.5, -0.05))
-
-    fig.suptitle("Démographie et abstention par département (T1, 1995–2022)", fontsize=13, y=1.01)
     plt.tight_layout()
     save_fig("04_demo_vs_abstention")
 
-    # Table de corrélations
+    # Table de corrélations par groupe
     corr_table = []
-    for var, label, _ in vars_demo:
-        r = df[[var, "taux_abstention"]].dropna().corr().iloc[0, 1]
-        corr_table.append({"variable": label, "correlation_pearson": round(r, 3)})
+    for var, label in [("pct_seniors", "% seniors (60+)"),
+                        ("pct_jeunes", "% jeunes (0–39)"),
+                        ("pct_actifs", "% actifs (40–59)")]:
+        r_grp = df[[var, "taux_abstention"]].dropna().corr().iloc[0, 1]
+        corr_table.append({"variable": label, "correlation_pearson": round(r_grp, 3)})
     pd.DataFrame(corr_table).to_csv(TABLE_DIR / "correlations_demo_abstention.csv", index=False)
 
 
@@ -306,6 +296,346 @@ def analyse_evolution_departements(df_demo):
 
 
 # ──────────────────────────────────────────────────────────────────
+# 6. Tous les groupes d'âge (0-19 → 75+) vs abstention
+# ──────────────────────────────────────────────────────────────────
+def analyse_tous_groupes_age(df_demo):
+    print("\n[6] Tous les groupes d'âge vs abstention...")
+
+    df = df_demo[(df_demo["tour"] == 1) & df_demo["pop_ens_total"].notna()].copy()
+    pop = df["pop_ens_total"].replace(0, np.nan)
+
+    groupes = {
+        "0–19 ans":  ("pop_ens_0_19",  "#2ecc71"),
+        "20–39 ans": ("pop_ens_20_39", "#27ae60"),
+        "40–59 ans": ("pop_ens_40_59", "#3498db"),
+        "60–74 ans": ("pop_ens_60_74", "#e67e22"),
+        "75 ans +":  ("pop_ens_75p",   "#e74c3c"),
+    }
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    corr_results = {}
+    for label, (col, color) in groupes.items():
+        if col not in df.columns:
+            continue
+        pct = (df[col] / pop * 100).rename("pct")
+        data = pd.concat([pct, df["taux_abstention"]], axis=1).dropna()
+
+        ax.scatter(data["pct"], data["taux_abstention"],
+                   alpha=0.25, s=14, color=color, label=label)
+
+        z = np.polyfit(data["pct"], data["taux_abstention"], 1)
+        p = np.poly1d(z)
+        xs = np.linspace(data["pct"].min(), data["pct"].max(), 200)
+        r = data["pct"].corr(data["taux_abstention"])
+        ax.plot(xs, p(xs), color=color, linewidth=2, linestyle="--", alpha=0.9)
+
+        corr_results[label] = round(r, 3)
+
+    # Légende enrichie avec le r de chaque groupe
+    handles, labels_leg = ax.get_legend_handles_labels()
+    new_labels = [f"{l}  (r = {corr_results.get(l, '?'):.2f})" for l in labels_leg]
+    ax.legend(handles, new_labels, fontsize=9, title="Groupe d'âge", loc="upper right")
+
+    ax.set_title(
+        "Tous les groupes d'âge vs taux d'abstention par département\n"
+        "Présidentielles T1, 1995–2022 — tous départements confondus",
+        fontsize=12,
+    )
+    ax.set_xlabel("% de la population dans le groupe d'âge")
+    ax.set_ylabel("Taux d'abstention (%)")
+    ax.grid(alpha=0.2)
+    ax.annotate(f"n ≈ {len(df)} observations par groupe (6 scrutins × ~96 depts)",
+                xy=(0.98, 0.04), xycoords="axes fraction",
+                ha="right", fontsize=8, color="grey")
+
+    plt.tight_layout()
+    save_fig("06_tous_groupes_age_vs_abstention")
+
+    pd.DataFrame([{"groupe": k, "correlation_pearson": v}
+                  for k, v in corr_results.items()]).to_csv(
+        TABLE_DIR / "correlations_groupes_age_abstention.csv", index=False
+    )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 7. Courbe globale — tous groupes d'âge fusionnés vs abstention
+# ──────────────────────────────────────────────────────────────────
+def analyse_courbe_globale(df_demo):
+    print("\n[7] Courbe globale tous groupes d'âge vs abstention...")
+
+    df = df_demo[(df_demo["tour"] == 1) & df_demo["pop_ens_total"].notna()].copy()
+    pop = df["pop_ens_total"].replace(0, np.nan)
+
+    groupes = {
+        "0–19 ans":  ("pop_ens_0_19",  "#2ecc71"),
+        "20–39 ans": ("pop_ens_20_39", "#27ae60"),
+        "40–59 ans": ("pop_ens_40_59", "#3498db"),
+        "60–74 ans": ("pop_ens_60_74", "#e67e22"),
+        "75 ans +":  ("pop_ens_75p",   "#e74c3c"),
+    }
+
+    # Calcul de la corrélation et de l'abstention moyenne pour chaque groupe
+    records = []
+    for label, (col, color) in groupes.items():
+        if col not in df.columns:
+            continue
+        pct = (df[col] / pop * 100).rename("pct")
+        data = pd.concat([pct, df["taux_abstention"]], axis=1).dropna()
+        r = data["pct"].corr(data["taux_abstention"])
+        records.append({
+            "groupe": label,
+            "color":  color,
+            "r":      r,
+            "pct_moyen": data["pct"].mean(),
+            "abstention_moy": data["taux_abstention"].mean(),
+            "data": data,
+        })
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # — Panneau gauche : corrélation par tranche d'âge (ordonnée par âge croissant)
+    ax1 = axes[0]
+    labels = [r["groupe"] for r in records]
+    corrs  = [r["r"]      for r in records]
+    colors = [r["color"]  for r in records]
+
+    bars = ax1.barh(labels, corrs, color=colors, alpha=0.85, edgecolor="white")
+    for bar, val in zip(bars, corrs):
+        ax1.text(val + (0.01 if val >= 0 else -0.01),
+                 bar.get_y() + bar.get_height() / 2,
+                 f"r = {val:+.2f}", va="center",
+                 ha="left" if val >= 0 else "right", fontsize=9, fontweight="bold")
+    ax1.axvline(0, color="black", linewidth=1)
+    ax1.set_xlim(-0.6, 0.7)
+    ax1.set_xlabel("Corrélation de Pearson avec le taux d'abstention")
+    ax1.set_title("Corrélation tranche d'âge × abstention\n(positif = plus d'abstention)", fontsize=10)
+    ax1.grid(axis="x", alpha=0.25)
+
+    # — Panneau droit : nuage global avec tendance par groupe, X = âge médian de la tranche
+    ax2 = axes[1]
+    ages_medians = [9, 29, 49, 67, 80]  # milieux des tranches 0-19, 20-39, 40-59, 60-74, 75+
+    for rec, age_med in zip(records, ages_medians):
+        ax2.scatter([age_med] * len(rec["data"]),
+                    rec["data"]["taux_abstention"],
+                    alpha=0.15, s=10, color=rec["color"])
+        ax2.scatter(age_med, rec["abstention_moy"],
+                    s=120, color=rec["color"], edgecolors="black",
+                    linewidth=1.2, zorder=5, label=rec["groupe"])
+
+    # Courbe lissée reliant les moyennes
+    moys_x = ages_medians
+    moys_y = [r["abstention_moy"] for r in records]
+    z = np.polyfit(moys_x, moys_y, 2)           # polynôme degré 2
+    p2 = np.poly1d(z)
+    xs = np.linspace(min(moys_x) - 5, max(moys_x) + 5, 300)
+    ax2.plot(xs, p2(xs), color="black", linewidth=2.5, linestyle="--",
+             label="Tendance globale (poly. deg. 2)", zorder=6)
+
+    ax2.set_xlabel("Âge médian de la tranche")
+    ax2.set_ylabel("Taux d'abstention (%)")
+    ax2.set_title("Abstention moyenne par tranche d'âge\n(points = depts, losanges = moyenne)", fontsize=10)
+    ax2.set_xticks(ages_medians)
+    ax2.set_xticklabels(["0–19\n(9)", "20–39\n(29)", "40–59\n(49)", "60–74\n(67)", "75+\n(80)"])
+    ax2.legend(fontsize=8, loc="upper right")
+    ax2.grid(alpha=0.2)
+
+    fig.suptitle(
+        "Modélisation globale : relation entre tranche d'âge et taux d'abstention\n"
+        "Présidentielles T1, 1995–2022",
+        fontsize=13,
+    )
+    plt.tight_layout()
+    save_fig("07_courbe_globale_tous_groupes")
+
+
+# ──────────────────────────────────────────────────────────────────
+# 9. Prédiction participation 2027 (régression linéaire depuis 2007)
+# ──────────────────────────────────────────────────────────────────
+def prediction_participation_2027(df_demo):
+    print("\n[9] Prédiction participation 2027...")
+
+    # Agrégation nationale par année + tour
+    natl = (
+        df_demo.groupby(["annee", "tour"])
+        .agg(inscrits=("inscrits", "sum"), votants=("votants", "sum"))
+        .reset_index()
+    )
+    natl["taux_participation"] = natl["votants"] / natl["inscrits"] * 100
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+
+    for ax, tour in zip(axes, [1, 2]):
+        df_tour = natl[natl["tour"] == tour].sort_values("annee")
+
+        # Tous les points historiques (contexte)
+        hist_all = df_tour[df_tour["annee"] <= 2022]
+        ax.scatter(hist_all["annee"], hist_all["taux_participation"],
+                   color="grey", s=60, zorder=3, label="Données 1995–2022")
+
+        # Points 2007–2022 utilisés pour la régression
+        reg_df = df_tour[df_tour["annee"] >= 2007]
+        x = reg_df["annee"].values
+        y = reg_df["taux_participation"].values
+        n = len(x)
+
+        # Régression linéaire (numpy)
+        coeffs = np.polyfit(x, y, 1)
+        a, b = coeffs
+        poly = np.poly1d(coeffs)
+
+        # Résidus et erreur standard
+        y_hat = poly(x)
+        residuals = y - y_hat
+        mse = np.sum(residuals ** 2) / (n - 2)
+        x_mean = x.mean()
+        ss_x = np.sum((x - x_mean) ** 2)
+
+        # Valeur prédite 2027
+        x_pred = 2027
+        y_pred = poly(x_pred)
+
+        # Intervalle de prédiction (t critique à 95%, df = n-2)
+        from scipy import stats
+        t_crit = stats.t.ppf(0.975, df=n - 2)
+        se_pred = np.sqrt(mse * (1 + 1/n + (x_pred - x_mean)**2 / ss_x))
+        ci_low  = y_pred - t_crit * se_pred
+        ci_high = y_pred + t_crit * se_pred
+
+        # Ligne de régression étendue jusqu'à 2027
+        xs = np.linspace(2007, 2028, 300)
+        ax.plot(xs, poly(xs), color="#3498db", linewidth=2,
+                linestyle="--", label=f"Tendance 2007–2022\n(y = {a:+.2f}x {b:+.0f})")
+
+        # Points de régression surlignés
+        ax.scatter(x, y, color="#3498db", s=80, zorder=4)
+
+        # Point de prédiction 2027
+        ax.scatter(x_pred, y_pred, color="#e74c3c", s=160,
+                   zorder=5, marker="*", label=f"Prédiction 2027 : {y_pred:.1f}%")
+
+        # Intervalle de confiance
+        ax.fill_between([x_pred - 0.3, x_pred + 0.3],
+                        [ci_low, ci_low], [ci_high, ci_high],
+                        color="#e74c3c", alpha=0.2)
+        ax.vlines(x_pred, ci_low, ci_high, color="#e74c3c", linewidth=2, alpha=0.6)
+        ax.annotate(f"IC 95%\n[{ci_low:.1f}% – {ci_high:.1f}%]",
+                    xy=(x_pred + 0.3, y_pred), fontsize=8.5,
+                    color="#e74c3c", va="center")
+
+        ax.set_title(f"Tour {tour} — Prédiction 2027", fontsize=11)
+        ax.set_xlabel("Année")
+        if tour == 1:
+            ax.set_ylabel("Taux de participation (%)")
+        ax.set_xticks(list(ANNEES) + [2027])
+        ax.set_xlim(1993, 2031)
+        ax.set_ylim(50, 100)
+        ax.axvline(2022.5, color="black", linewidth=0.8, linestyle=":", alpha=0.5)
+        ax.legend(fontsize=8.5, loc="lower left")
+        ax.grid(axis="y", alpha=0.25)
+
+        print(f"  Tour {tour} — prédiction : {y_pred:.1f}%  IC95% [{ci_low:.1f}% – {ci_high:.1f}%]")
+
+    fig.suptitle(
+        "Prédiction du taux de participation pour 2027\n"
+        "Régression linéaire sur les scrutins 2007–2022",
+        fontsize=13,
+    )
+    plt.tight_layout()
+    save_fig("09_prediction_participation_2027")
+
+
+# ──────────────────────────────────────────────────────────────────
+# 10. Prédiction abstention 2027 (régression linéaire depuis 2007)
+# ──────────────────────────────────────────────────────────────────
+def prediction_abstention_2027(df_demo):
+    print("\n[10] Prédiction abstention 2027...")
+
+    from scipy import stats
+
+    natl = (
+        df_demo.groupby(["annee", "tour"])
+        .agg(inscrits=("inscrits", "sum"), abstentions=("abstentions", "sum"))
+        .reset_index()
+    )
+    natl["taux_abstention"] = natl["abstentions"] / natl["inscrits"] * 100
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+
+    for ax, tour in zip(axes, [1, 2]):
+        df_tour = natl[natl["tour"] == tour].sort_values("annee")
+
+        # Tous les points historiques (contexte grisé)
+        hist_all = df_tour[df_tour["annee"] <= 2022]
+        ax.scatter(hist_all["annee"], hist_all["taux_abstention"],
+                   color="grey", s=60, zorder=3, label="Données 1995–2022")
+
+        # Points 2007–2022 pour la régression
+        reg_df = df_tour[df_tour["annee"] >= 2007]
+        x = reg_df["annee"].values.astype(float)
+        y = reg_df["taux_abstention"].values
+        n = len(x)
+
+        coeffs = np.polyfit(x, y, 1)
+        a, b = coeffs
+        poly = np.poly1d(coeffs)
+
+        y_hat  = poly(x)
+        mse    = np.sum((y - y_hat) ** 2) / (n - 2)
+        x_mean = x.mean()
+        ss_x   = np.sum((x - x_mean) ** 2)
+
+        x_pred  = 2027.0
+        y_pred  = poly(x_pred)
+        t_crit  = stats.t.ppf(0.975, df=n - 2)
+        se_pred = np.sqrt(mse * (1 + 1/n + (x_pred - x_mean)**2 / ss_x))
+        ci_low  = y_pred - t_crit * se_pred
+        ci_high = y_pred + t_crit * se_pred
+
+        # Ligne de tendance étendue à 2027
+        xs = np.linspace(2007, 2028, 300)
+        ax.plot(xs, poly(xs), color="#e67e22", linewidth=2, linestyle="--",
+                label=f"Tendance 2007–2022\n(y = {a:+.2f}x {b:+.0f})")
+
+        # Points de régression surlignés
+        ax.scatter(x, y, color="#e67e22", s=80, zorder=4)
+
+        # Prédiction 2027
+        ax.scatter(x_pred, y_pred, color="#c0392b", s=160,
+                   zorder=5, marker="*", label=f"Prédiction 2027 : {y_pred:.1f}%")
+
+        # Intervalle de confiance
+        ax.vlines(x_pred, ci_low, ci_high, color="#c0392b", linewidth=2, alpha=0.6)
+        ax.fill_between([x_pred - 0.3, x_pred + 0.3],
+                        [ci_low, ci_low], [ci_high, ci_high],
+                        color="#c0392b", alpha=0.2)
+        ax.annotate(f"IC 95%\n[{ci_low:.1f}% – {ci_high:.1f}%]",
+                    xy=(x_pred + 0.3, y_pred), fontsize=8.5,
+                    color="#c0392b", va="center")
+
+        ax.set_title(f"Tour {tour} — Prédiction 2027", fontsize=11)
+        ax.set_xlabel("Année")
+        if tour == 1:
+            ax.set_ylabel("Taux d'abstention (%)")
+        ax.set_xticks(list(ANNEES) + [2027])
+        ax.set_xlim(1993, 2031)
+        ax.set_ylim(0, 50)
+        ax.axvline(2022.5, color="black", linewidth=0.8, linestyle=":", alpha=0.5)
+        ax.legend(fontsize=8.5, loc="upper left")
+        ax.grid(axis="y", alpha=0.25)
+
+        print(f"  Tour {tour} — prédiction : {y_pred:.1f}%  IC95% [{ci_low:.1f}% – {ci_high:.1f}%]")
+
+    fig.suptitle(
+        "Prédiction du taux d'abstention pour 2027\n"
+        "Régression linéaire sur les scrutins 2007–2022",
+        fontsize=13,
+    )
+    plt.tight_layout()
+    save_fig("10_prediction_abstention_2027")
+
+
+# ──────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────
 def main():
@@ -321,6 +651,10 @@ def main():
     analyse_t2(df_cand)
     analyse_demo_vs_abstention(df_demo)
     analyse_evolution_departements(df_demo)
+    analyse_tous_groupes_age(df_demo)
+    analyse_courbe_globale(df_demo)
+    prediction_participation_2027(df_demo)
+    prediction_abstention_2027(df_demo)
 
     print(f"\nToutes les figures sont dans : {FIG_DIR}")
     print(f"Tous les tableaux sont dans  : {TABLE_DIR}")
