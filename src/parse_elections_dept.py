@@ -190,43 +190,58 @@ def parse_2022_t1(file: Path) -> list:
     """
     2022_01.xlsx : niveau bureau de vote.
     On agrège par département.
-    Candidats sur la même ligne (colonnes répétées après Exprimés).
+    Candidats sur la même ligne, blocs répétés [N°Panneau, Sexe, Nom, Prénom,
+    Voix, %Voix/Ins, %Voix/Exp] après Exprimés. Excel ne répète le texte de
+    l'en-tête que pour le 1er candidat ; pandas renomme les colonnes vides en
+    "Unnamed: N", donc on repère les blocs par position (stride de 7) plutôt
+    que par le nom de colonne "sexe", qui ne matcherait que le 1er candidat.
     """
-    df = pd.read_excel(file, sheet_name=0, header=0, engine="openpyxl")
-    df.columns = [norm(c) for c in df.columns]
+    df_raw = pd.read_excel(file, sheet_name=0, header=0, engine="openpyxl")
+    norm_cols = [norm(c) for c in df_raw.columns]
 
-    # Colonnes fixes
-    dept_col = "code du département"
-    dept_nom_col = "libellé du département"
+    dept_col_idx = norm_cols.index("code du département")
+    dept_nom_col_idx = norm_cols.index("libellé du département")
+    inscrits_idx = norm_cols.index("inscrits")
+    votants_idx = norm_cols.index("votants")
+    abstentions_idx = norm_cols.index("abstentions")
+    exprimes_idx = norm_cols.index("exprimés")
 
-    # Identifier les colonnes candidats : blocs [sexe, nom, prénom, voix, …]
-    cols = list(df.columns)
-    sexe_positions = [i for i, c in enumerate(cols) if c == "sexe"]
+    # 1er bloc candidat : repéré par la colonne "N°Panneau", puis stride de 7
+    block_start = next(i for i, c in enumerate(norm_cols) if "panneau" in c)
+    block_starts = list(range(block_start, len(norm_cols), 7))
 
-    # Construire un df candidats long
+    # Agrégat inscrits/votants/abstentions/exprimes : une ligne par bureau de
+    # vote, calculé AVANT l'explosion par candidat (sinon ces valeurs seraient
+    # comptées une fois par candidat lors du groupby plus bas).
+    base = pd.DataFrame({
+        "dept_code": df_raw.iloc[:, dept_col_idx].astype(str).str.strip().str.zfill(2),
+        "dept_nom": df_raw.iloc[:, dept_nom_col_idx].astype(str).str.strip(),
+        "inscrits": df_raw.iloc[:, inscrits_idx].apply(clean_num),
+        "votants": df_raw.iloc[:, votants_idx].apply(clean_num),
+        "abstentions": df_raw.iloc[:, abstentions_idx].apply(clean_num),
+        "exprimes": df_raw.iloc[:, exprimes_idx].apply(clean_num),
+    })
+    dept_agg = (
+        base.groupby(["dept_code", "dept_nom"])
+        .agg(inscrits=("inscrits", "sum"), votants=("votants", "sum"),
+             abstentions=("abstentions", "sum"), exprimes=("exprimes", "sum"))
+        .reset_index()
+    )
+
+    # Construire un df candidats long (uniquement dept_code/candidat/voix)
     records = []
-    for _, row in df.iterrows():
-        dept_code = str(row[dept_col]).strip().zfill(2)
-        dept_nom = str(row[dept_nom_col]).strip()
-        inscrits = clean_num(row.get("inscrits"))
-        votants = clean_num(row.get("votants"))
-        abstentions = clean_num(row.get("abstentions"))
-        exprimes = clean_num(row.get("exprimés"))
-        for pos in sexe_positions:
+    for _, row in df_raw.iterrows():
+        dept_code = str(row.iloc[dept_col_idx]).strip().zfill(2)
+        for pos in block_starts:
             try:
-                nom_val = str(row.iloc[pos + 1]).strip()
-                prenom_val = str(row.iloc[pos + 2]).strip()
-                voix_val = clean_num(row.iloc[pos + 3])
+                nom_val = str(row.iloc[pos + 2]).strip()
+                prenom_val = str(row.iloc[pos + 3]).strip()
+                voix_val = clean_num(row.iloc[pos + 4])
                 if pd.isna(voix_val) or nom_val in ("nan", ""):
                     continue
                 nom_complet = f"{nom_val} {prenom_val}".strip()
                 records.append({
                     "dept_code": dept_code,
-                    "dept_nom": dept_nom,
-                    "inscrits": inscrits,
-                    "votants": votants,
-                    "abstentions": abstentions,
-                    "exprimes": exprimes,
                     "candidat": nom_complet,
                     "voix": voix_val,
                 })
@@ -234,13 +249,6 @@ def parse_2022_t1(file: Path) -> list:
                 continue
 
     long_df = pd.DataFrame(records)
-    # Agréger par département
-    dept_agg = (
-        long_df.groupby(["dept_code", "dept_nom"])
-        .agg(inscrits=("inscrits", "sum"), votants=("votants", "sum"),
-             abstentions=("abstentions", "sum"), exprimes=("exprimes", "sum"))
-        .reset_index()
-    )
     cand_agg = (
         long_df.groupby(["dept_code", "candidat"])["voix"]
         .sum()
@@ -292,14 +300,26 @@ def parse_2022_t2(file: Path) -> list:
         ("_c1", "_c2", "_c3", "_c4"),
     ]
 
+    # Agrégat inscrits/votants/abstentions/exprimes : une ligne par commune,
+    # calculé AVANT l'explosion par candidat (sinon ces valeurs sont comptées
+    # deux fois lors du groupby plus bas, une fois par candidat).
+    base = df.copy()
+    base["dept_code"] = base[dept_col].astype(str).str.strip().str.zfill(2)
+    base["dept_nom"] = base[dept_nom_col].astype(str).str.strip()
+    base["inscrits"] = base.get("Inscrits").apply(clean_num)
+    base["votants"] = base.get("Votants").apply(clean_num)
+    base["abstentions"] = base.get("Abstentions").apply(clean_num)
+    base["exprimes"] = base.get("Exprimés").apply(clean_num)
+    dept_agg = (
+        base.groupby(["dept_code", "dept_nom"])
+        .agg(inscrits=("inscrits", "sum"), votants=("votants", "sum"),
+             abstentions=("abstentions", "sum"), exprimes=("exprimes", "sum"))
+        .reset_index()
+    )
+
     records = []
     for _, row in df.iterrows():
         dept_code = str(row[dept_col]).strip().zfill(2)
-        dept_nom = str(row[dept_nom_col]).strip()
-        inscrits = clean_num(row.get("Inscrits"))
-        votants = clean_num(row.get("Votants"))
-        abstentions = clean_num(row.get("Abstentions"))
-        exprimes = clean_num(row.get("Exprimés"))
 
         for sexe_col, nom_col, prenom_col, voix_col in cand_blocks:
             nom_val = str(row.get(nom_col, "")).strip()
@@ -309,19 +329,11 @@ def parse_2022_t2(file: Path) -> list:
                 continue
             nom_complet = f"{nom_val} {prenom_val}".strip()
             records.append({
-                "dept_code": dept_code, "dept_nom": dept_nom,
-                "inscrits": inscrits, "votants": votants,
-                "abstentions": abstentions, "exprimes": exprimes,
+                "dept_code": dept_code,
                 "candidat": nom_complet, "voix": voix_val,
             })
 
     long_df = pd.DataFrame(records)
-    dept_agg = (
-        long_df.groupby(["dept_code", "dept_nom"])
-        .agg(inscrits=("inscrits", "sum"), votants=("votants", "sum"),
-             abstentions=("abstentions", "sum"), exprimes=("exprimes", "sum"))
-        .reset_index()
-    )
     cand_agg = (
         long_df.groupby(["dept_code", "candidat"])["voix"]
         .sum()

@@ -1,3 +1,4 @@
+import unicodedata
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -19,16 +20,20 @@ ANNEES = [1995, 2002, 2007, 2012, 2017, 2022]
 PALETTE_ANNEES = dict(zip(ANNEES, sns.color_palette("tab10", len(ANNEES))))
 
 # Familles politiques (candidats T1 principaux)
+# Noms en MAJUSCULES SANS ACCENT : la comparaison passe par normalize_name()
+# pour absorber les variations de casse/accents entre les fichiers sources
+# (ex. "SARKOZY Nicolas" en 2007+ vs "SARKOZY NICOLAS" ici).
 FAMILLES = {
     "Extrême gauche":  ["LAGUILLER ARLETTE", "BESANCENOT OLIVIER", "POUTOU PHILIPPE", "ARTHAUD NATHALIE"],
     "Gauche":          ["JOSPIN LIONEL", "HUE ROBERT", "TAUBIRA CHRISTIANE", "ROYAL SEGOLENE",
-                        "HOLLANDE FRANCOIS", "HAMON BENOIT", "MELENCHON JEAN-LUC"],
+                        "HOLLANDE FRANCOIS", "HAMON BENOIT", "MELENCHON JEAN-LUC",
+                        "ROUSSEL FABIEN", "HIDALGO ANNE"],
     "Ecologie":        ["VOYNET DOMINIQUE", "MAMERE NOEL", "DUFLOT CECILE", "JADOT YANNICK"],
-    "Centre":          ["BAYROU FRANCOIS", "MACRON EMMANUEL"],
+    "Centre":          ["BAYROU FRANCOIS", "MACRON EMMANUEL", "LASSALLE JEAN"],
     "Droite":          ["CHIRAC JACQUES", "BALLADUR EDOUARD", "MADELIN ALAIN", "SARKOZY NICOLAS",
-                        "FILLON FRANCOIS"],
-    "Souverainiste":   ["VILLIERS DE PHILIPPE", "DUPONT-AIGNAN NICOLAS", "SAINT-JOSSE JEAN",
-                        "CHEVENEMENT JEAN-PIERRE"],
+                        "FILLON FRANCOIS", "PECRESSE VALERIE"],
+    "Souverainiste":   ["VILLIERS DE PHILIPPE", "DE VILLIERS PHILIPPE", "DUPONT-AIGNAN NICOLAS",
+                        "SAINT-JOSSE JEAN", "CHEVENEMENT JEAN-PIERRE"],
     "Extrême droite":  ["LE PEN J.MARIE", "LE PEN JEAN-MARIE", "LE PEN MARINE", "MEGRET BRUNO",
                         "ZEMMOUR ERIC"],
     "Autre":           [],
@@ -46,9 +51,25 @@ COULEURS_FAMILLES = {
 }
 
 
+def normalize_name(s):
+    """Majuscules + suppression des accents, pour comparer des noms saisis
+    avec des formats différents selon les fichiers sources (1995-2002 en
+    MAJUSCULES vs 2007+ en casse mixte accentuée)."""
+    s = str(s).upper().strip()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return s
+
+
+FAMILLES_NORM = {
+    famille: {normalize_name(nom) for nom in noms}
+    for famille, noms in FAMILLES.items()
+}
+
+
 def get_famille(candidat):
-    for famille, noms in FAMILLES.items():
-        if candidat in noms:
+    nom_norm = normalize_name(candidat)
+    for famille, noms in FAMILLES_NORM.items():
+        if nom_norm in noms:
             return famille
     return "Autre"
 
