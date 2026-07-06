@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
-from data_loader import load_scenarios_2027, load_predictions_2027
+from data_loader import load_scenarios_2027, load_predictions_2027, load_linear_prediction, load_participation_nationale
 from _style import inject_css, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, LEGEND_BASE, carte_note
 
 st.set_page_config(
@@ -40,6 +40,16 @@ df_scen = load_scenarios_2027()
 df_pred = load_predictions_2027()
 df_pred["dept_code"] = df_pred["dept_code"].astype(str).str.zfill(2)
 
+try:
+    df_linpred = load_linear_prediction()
+except Exception:
+    df_linpred = None
+
+try:
+    df_partic = load_participation_nationale()
+except Exception:
+    df_partic = None
+
 SCENARIOS = {
     "baseline":              ("Scénario de base",                "#2a78d6"),
     "abstention_jeunes_+5pp": ("Désengagement des jeunes (+5 pp)", "#e34948"),
@@ -55,13 +65,146 @@ LABELS = {
 # ── En-tête ─────────────────────────────────────────────────────────────────────
 st.markdown("## 🔮 Acte 3 — Et 2027 ?")
 st.markdown(
-    "Un modèle Random Forest entraîné sur les données 1995–2022 projette l'abstention au premier tour 2027. "
-    "Trois hypothèses sont testées : une trajectoire **neutre**, un **décrochage des jeunes** et une **remobilisation**."
+    "Si la tendance structurelle se maintient, l'abstention au premier tour 2027 devrait dépasser **28%**. "
+    "Cette projection repose sur deux approches complémentaires : une **régression linéaire de la tendance** "
+    "(transparente, avec intervalles de confiance explicites) et un **modèle Ridge** "
+    "(intégrant démographie et historique électoral par département)."
 )
 st.markdown("<br>", unsafe_allow_html=True)
 
+# ── Méthode 1 : régression linéaire nationale ─────────────────────────────────
+st.markdown("### 📈 Méthode 1 — Tendance linéaire (2007–2022)")
+st.markdown(
+    "La façon la plus honnête de projeter : une droite de tendance sur les 4 dernières élections. "
+    "Les **intervalles de confiance** montrent l'incertitude réelle — ne croyez pas une prédiction ponctuelle."
+)
+
+if df_linpred is not None and df_partic is not None:
+    t1_lin = df_linpred[df_linpred["tour"] == 1].iloc[0]
+    t2_lin = df_linpred[df_linpred["tour"] == 2].iloc[0]
+
+    # KPI fourchettes
+    kc1, kc2 = st.columns(2)
+    kc1.markdown(f"""
+<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid #2a78d6;
+border-radius:8px;padding:20px;text-align:center;">
+  <p style="color:#52514e;font-size:0.78rem;font-weight:600;letter-spacing:0.8px;
+  text-transform:uppercase;margin:0 0 4px;">Abstention T1 2027</p>
+  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0;">{t1_lin['pred']:.1f} %</p>
+  <p style="color:#2a78d6;font-size:0.85rem;margin:4px 0 0;">
+    IC 80% : {t1_lin['ci80_low']:.1f} % – {t1_lin['ci80_high']:.1f} %
+  </p>
+  <p style="color:#898781;font-size:0.75rem;margin:2px 0 0;">
+    IC 95% : {t1_lin['ci95_low']:.1f} % – {t1_lin['ci95_high']:.1f} %
+  </p>
+</div>""", unsafe_allow_html=True)
+
+    kc2.markdown(f"""
+<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid #ff7f0e;
+border-radius:8px;padding:20px;text-align:center;">
+  <p style="color:#52514e;font-size:0.78rem;font-weight:600;letter-spacing:0.8px;
+  text-transform:uppercase;margin:0 0 4px;">Abstention T2 2027</p>
+  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0;">{t2_lin['pred']:.1f} %</p>
+  <p style="color:#e07020;font-size:0.85rem;margin:4px 0 0;">
+    IC 80% : {t2_lin['ci80_low']:.1f} % – {t2_lin['ci80_high']:.1f} %
+  </p>
+  <p style="color:#898781;font-size:0.75rem;margin:2px 0 0;">
+    IC 95% : {t2_lin['ci95_low']:.1f} % – {t2_lin['ci95_high']:.1f} %
+  </p>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Graphique tendance linéaire
+    ANNEES = [1995, 2002, 2007, 2012, 2017, 2022]
+    partic_t1 = df_partic[df_partic["tour"] == 1].sort_values("annee")
+    partic_t2 = df_partic[df_partic["tour"] == 2].sort_values("annee")
+
+    fig_trend = go.Figure()
+
+    for tour_df, t1_data, label, color in [
+        (partic_t1, t1_lin, "Tour 1", "#2a78d6"),
+        (partic_t2, t2_lin, "Tour 2", "#ff7f0e"),
+    ]:
+        x_hist = tour_df[tour_df["annee"] >= 2007]["annee"].values.astype(float)
+        y_hist = tour_df[tour_df["annee"] >= 2007]["taux_abstention"].values
+        slope, intercept = np.polyfit(x_hist, y_hist, 1)
+        x_ext = np.linspace(2007, 2028, 200)
+        y_ext = intercept + slope * x_ext
+
+        # Bande IC 80%
+        fig_trend.add_trace(go.Scatter(
+            x=[2027, 2027], y=[t1_data["ci80_low"], t1_data["ci80_high"]],
+            mode="lines",
+            line=dict(color=color, width=12, dash="solid"),
+            opacity=0.25, showlegend=False,
+            hoverinfo="skip",
+        ))
+        # Bande IC 95%
+        fig_trend.add_trace(go.Scatter(
+            x=[2027, 2027], y=[t1_data["ci95_low"], t1_data["ci95_high"]],
+            mode="lines",
+            line=dict(color=color, width=6, dash="solid"),
+            opacity=0.12, showlegend=False,
+            hoverinfo="skip",
+        ))
+        # Droite de tendance
+        fig_trend.add_trace(go.Scatter(
+            x=x_ext, y=y_ext,
+            mode="lines",
+            line=dict(color=color, width=1.5, dash="dash"),
+            showlegend=False, hoverinfo="skip",
+        ))
+        # Points observés
+        fig_trend.add_trace(go.Scatter(
+            x=tour_df["annee"], y=tour_df["taux_abstention"],
+            mode="lines+markers",
+            name=label,
+            line=dict(color=color, width=2.5),
+            marker=dict(size=8, color=color),
+            hovertemplate=f"<b>{label} %{{x}}</b><br>Abstention : %{{y:.1f}} %<extra></extra>",
+        ))
+        # Point prédiction
+        fig_trend.add_trace(go.Scatter(
+            x=[2027], y=[t1_data["pred"]],
+            mode="markers",
+            marker=dict(size=14, color=color, symbol="star"),
+            showlegend=False,
+            hovertemplate=f"<b>{label} 2027</b><br>Prédiction : {t1_data['pred']:.1f}%<br>"
+                          f"IC 80% : [{t1_data['ci80_low']:.1f}–{t1_data['ci80_high']:.1f}%]<extra></extra>",
+        ))
+
+    fig_trend.update_layout(
+        **PLOTLY_BASE,
+        yaxis=dict(**YAXIS_BASE, ticksuffix=" %", range=[15, 45],
+                   title="Taux d'abstention (%)"),
+        xaxis=dict(**XAXIS_BASE, range=[1993, 2030], dtick=5,
+                   title="Année de l'élection"),
+        height=380,
+        legend=LEGEND_BASE,
+    )
+    fig_trend.add_vline(x=2022.5, line_dash="dot", line_color="#52514e", line_width=1,
+                        annotation_text="→ Projection", annotation_position="top right")
+    st.plotly_chart(fig_trend, use_container_width=True)
+
+    carte_note(
+        f"T1 2027 : {t1_lin['pred']:.1f}% [IC 80% : {t1_lin['ci80_low']:.1f}–{t1_lin['ci80_high']:.1f}%] "
+        f"| T2 : {t2_lin['pred']:.1f}% [IC 80% : {t2_lin['ci80_low']:.1f}–{t2_lin['ci80_high']:.1f}%]. "
+        "L'intervalle T1 est très large (14 points) car le pic de 2002 crée de la variance. "
+        "Le T2 est bien contraint (+0.8% de pente par an, R²=0.998)."
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
+
+st.markdown("---")
+st.markdown("### 🤖 Méthode 2 — Modèle Ridge par département (scénarios)")
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ── Tuiles scénarios ─────────────────────────────────────────────────────────────
+# RMSE moyen du modèle Ridge en LOYO (~4.7 pp) → fourchette de confiance
+RIDGE_RMSE = 4.7
+
 st.markdown("### Les trois scénarios")
+st.caption("La fourchette [min–max] représente l'incertitude du modèle (±RMSE moyen en validation LOYO).")
 c1, c2, c3 = st.columns(3, gap="large")
 
 for col, (sid, (label, color)) in zip([c1, c2, c3], SCENARIOS.items()):
@@ -69,6 +212,8 @@ for col, (sid, (label, color)) in zip([c1, c2, c3], SCENARIOS.items()):
     pred = row["abstention_nationale_pred (%)"]
     dmin = row["dept_min (%)"]
     dmax = row["dept_max (%)"]
+    ci_low = max(0, pred - RIDGE_RMSE)
+    ci_high = pred + RIDGE_RMSE
     with col:
         st.markdown(f"""
 <div style="
@@ -81,8 +226,11 @@ for col, (sid, (label, color)) in zip([c1, c2, c3], SCENARIOS.items()):
 ">
   <p style="color: #52514e; font-size: 0.82rem; font-weight: 600;
             letter-spacing: 0.8px; text-transform: uppercase; margin: 0 0 6px;">{label}</p>
-  <p style="color: #0b0b0b; font-size: 2.2rem; font-weight: 700; margin: 0 0 4px;">{pred:.1f} %</p>
-  <p style="color: #898781; font-size: 0.8rem; margin: 0;">
+  <p style="color: #0b0b0b; font-size: 2.2rem; font-weight: 700; margin: 0 0 2px;">{pred:.1f} %</p>
+  <p style="color: {color}; font-size: 0.82rem; font-weight: 600; margin: 0 0 4px;">
+      Fourchette : {ci_low:.0f} – {ci_high:.0f} %
+  </p>
+  <p style="color: #898781; font-size: 0.78rem; margin: 0;">
       Depts : {dmin:.1f} % – {dmax:.1f} %
   </p>
 </div>

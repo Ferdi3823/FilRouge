@@ -57,3 +57,8 @@ def load_dept_clusters() -> pd.DataFrame:
 @st.cache_data
 def load_abstention_dept() -> pd.DataFrame:
     return pd.read_csv(TBL_DIR / "abstention_par_dept_annee.csv")
+
+
+@st.cache_data
+def load_linear_prediction() -> pd.DataFrame:
+    return pd.read_csv(TBL_DIR / "linear_trend_prediction.csv")

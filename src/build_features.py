@@ -487,6 +487,124 @@ def generate_2027(df_reg: pd.DataFrame, model: RandomForestRegressor, feat_cols:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 5. RÉGRESSION LINÉAIRE NATIONALE + INTERVALLES DE CONFIANCE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def linear_trend_prediction(df_demo: pd.DataFrame, target_year: int = 2027) -> pd.DataFrame:
+    """
+    Régression linéaire sur les taux d'abstention NATIONAUX depuis 2007 (tendance récente).
+    Produit une prédiction + IC à 80% et 95% pour target_year.
+
+    Méthode : OLS sur 4 points (2007, 2012, 2017, 2022).
+    IC calculés via scipy.stats.t avec df = n - 2.
+    Plus transparent que ML avec 6 points.
+    """
+    from scipy import stats
+
+    # Agrégation nationale
+    natl = (
+        df_demo.groupby(["annee", "tour"])
+        .apply(
+            lambda g: pd.Series({
+                "inscrits": g["inscrits"].sum(),
+                "abstentions": g["abstentions"].sum(),
+            }), include_groups=False
+        )
+        .reset_index()
+    )
+    natl["taux_abstention"] = natl["abstentions"] / natl["inscrits"] * 100
+
+    rows = []
+    for tour in [1, 2]:
+        sub = natl[(natl["tour"] == tour) & (natl["annee"] >= 2007)].sort_values("annee")
+        if len(sub) < 3:
+            continue
+
+        x = sub["annee"].values.astype(float)
+        y = sub["taux_abstention"].values
+        n = len(x)
+
+        slope, intercept, r, p, se = stats.linregress(x, y)
+        pred = intercept + slope * target_year
+
+        # IC via SE de prédiction
+        x_mean = x.mean()
+        ss_xx = ((x - x_mean) ** 2).sum()
+        y_hat = intercept + slope * x
+        s2 = ((y - y_hat) ** 2).sum() / (n - 2)
+        se_pred = np.sqrt(s2 * (1 + 1/n + (target_year - x_mean)**2 / ss_xx))
+
+        t80 = stats.t.ppf(0.90, df=n-2)
+        t95 = stats.t.ppf(0.975, df=n-2)
+
+        rows.append({
+            "tour": tour,
+            "annee_pred": target_year,
+            "pred": round(pred, 2),
+            "ci80_low":  round(pred - t80 * se_pred, 2),
+            "ci80_high": round(pred + t80 * se_pred, 2),
+            "ci95_low":  round(pred - t95 * se_pred, 2),
+            "ci95_high": round(pred + t95 * se_pred, 2),
+            "r2": round(r**2, 3),
+            "slope_pp_per_year": round(slope, 3),
+            "n_points": n,
+            # Historique pour la courbe
+            "annees_hist": x.tolist(),
+            "abstentions_hist": y.tolist(),
+        })
+
+    df_pred = pd.DataFrame(rows)
+
+    # Sauvegarde CSV (sans listes)
+    df_save = df_pred.drop(columns=["annees_hist", "abstentions_hist"])
+    df_save.to_csv(TABLE_DIR / "linear_trend_prediction.csv", index=False)
+
+    # Figure : tendance linéaire + bande IC
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    titles = {1: "Tour 1", 2: "Tour 2"}
+    colors = {1: "#2a78d6", 2: "#ff7f0e"}
+
+    for ax, row in zip(axes, rows):
+        t = row["tour"]
+        x_hist = np.array(row["annees_hist"])
+        y_hist = np.array(row["abstentions_hist"])
+        slope_v, intercept_v = np.polyfit(x_hist, y_hist, 1)
+
+        x_ext = np.linspace(x_hist.min(), target_year + 1, 200)
+        y_ext = intercept_v + slope_v * x_ext
+
+        ax.fill_between([target_year - 0.5, target_year + 0.5],
+                         [row["ci95_low"]] * 2, [row["ci95_high"]] * 2,
+                         color=colors[t], alpha=0.15, label="IC 95%")
+        ax.fill_between([target_year - 0.5, target_year + 0.5],
+                         [row["ci80_low"]] * 2, [row["ci80_high"]] * 2,
+                         color=colors[t], alpha=0.30, label="IC 80%")
+        ax.plot(x_ext, y_ext, color=colors[t], linewidth=1.8, linestyle="--", alpha=0.7)
+        ax.scatter(x_hist, y_hist, color=colors[t], s=70, zorder=5, label="Observé")
+        ax.scatter([target_year], [row["pred"]], color=colors[t], s=120,
+                   marker="*", zorder=6, label=f"Prédiction : {row['pred']:.1f}%")
+        ax.annotate(
+            f"{row['pred']:.1f}%\n[{row['ci80_low']:.0f}–{row['ci80_high']:.0f}%]",
+            (target_year, row["pred"]),
+            textcoords="offset points", xytext=(10, -15), fontsize=9,
+            color=colors[t], fontweight="bold"
+        )
+        ax.set_title(f"{titles[t]} — Tendance 2007→2027 (R²={row['r2']:.2f})", fontsize=11)
+        ax.set_xlabel("Année") ; ax.set_ylabel("Taux d'abstention (%)")
+        ax.set_xlim(2005, 2029) ; ax.set_ylim(15, 45)
+        ax.legend(fontsize=8) ; ax.grid(alpha=0.3)
+
+    plt.suptitle("Projection linéaire de l'abstention nationale — avec intervalles de confiance",
+                 fontsize=12)
+    plt.tight_layout()
+    save_fig("10_linear_trend_2027")
+
+    print("\nProjections linéaires 2027 :")
+    print(df_save.to_string(index=False))
+    return df_pred
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -562,6 +680,10 @@ def main():
     # ── 5. Scénarios 2027 ──────────────────────────────────────────────────────
     print("\n[5] Scénarios 2027...")
     generate_2027(df_reg, model, feat_cols)
+
+    # ── 6. Régression linéaire nationale + IC ─────────────────────────────────
+    print("\n[6] Régression linéaire nationale + intervalles de confiance...")
+    linear_trend_prediction(df_demo)
 
     print(f"\n✅ Terminé.")
     print(f"   Figures → {FIG_DIR}")
