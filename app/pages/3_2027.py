@@ -58,15 +58,17 @@ except Exception:
     df_sondages = None
 
 SCENARIOS = {
-    "baseline":              ("Scénario de base",                "#2a78d6"),
+    "baseline":               ("Scénario de base",                 "#2a78d6"),
     "abstention_jeunes_+5pp": ("Désengagement des jeunes (+5 pp)", "#e34948"),
-    "remobilisation_-4pp":   ("Remobilisation (−4 pp)",           "#1baf7a"),
+    "remobilisation_-4pp":    ("Remobilisation (−4 pp)",           "#1baf7a"),
+    "sans_macron_2027":       ("2027 sans Macron",                  "#9b59b6"),
 }
 
 LABELS = {
-    "baseline":              "Base",
+    "baseline":               "Base",
     "abstention_jeunes_+5pp": "Jeunes −",
-    "remobilisation_-4pp":   "Remob. +",
+    "remobilisation_-4pp":    "Remob. +",
+    "sans_macron_2027":       "Sans Macron",
 }
 
 # ── En-tête ─────────────────────────────────────────────────────────────────────
@@ -233,57 +235,25 @@ border-radius:8px;padding:20px;text-align:center;">
     )
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Section sondages : cartes + consensus ───────────────────────────────────
+    # Renvoi vers la page dédiée aux sondages
     if df_sondages is not None:
-        section_title("📊 Sondages d'intention d'abstention 2027",
-                      "Deux instituts indépendants — données illustratives à titre académique")
-
-        s_t1 = df_sondages[df_sondages["tour"] == 1].reset_index(drop=True)
-        poll_colors = ["#9b59b6", "#e34948"]
-
-        cols_polls = st.columns(len(s_t1))
-        for col, (_, row), pc in zip(cols_polls, s_t1.iterrows(), poll_colors):
-            col.markdown(f"""
-<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid {pc};
-border-radius:8px;padding:20px;text-align:center;">
-  <p style="color:#52514e;font-size:0.7rem;font-weight:700;letter-spacing:1px;
-  text-transform:uppercase;margin:0 0 2px;">{row['source']}</p>
-  <p style="color:#898781;font-size:0.78rem;margin:0 0 10px;">{row['date_label']}</p>
-  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0 0 2px;">
-    {row['intention_abstention']:.1f} %</p>
-  <p style="color:{pc};font-size:0.82rem;font-weight:600;margin:0 0 6px;">
-    ± {row['marge']:.1f} pp</p>
-  <p style="color:#898781;font-size:0.75rem;margin:0;">
-    Fourchette : {row['intention_abstention'] - row['marge']:.1f} – {row['intention_abstention'] + row['marge']:.1f} %
-  </p>
-</div>""", unsafe_allow_html=True)
-
-        # Consensus pondéré (poids = 1/marge²)
-        weights = 1.0 / (s_t1["marge"] ** 2)
-        poll_consensus = (s_t1["intention_abstention"] * weights).sum() / weights.sum()
-        model_val = float(t1_lin["pred"])
-        # Consensus final : 50% modèle + 50% moyenne pondérée des sondages
-        consensus = 0.5 * model_val + 0.5 * poll_consensus
-
-        st.markdown("<br>", unsafe_allow_html=True)
+        s_t1_ref = df_sondages[df_sondages["tour"] == 1]
+        weights_ref = 1.0 / (s_t1_ref["marge"] ** 2)
+        poll_consensus_ref = float((s_t1_ref["intention_abstention"] * weights_ref).sum() / weights_ref.sum())
+        consensus_ref = round(0.5 * float(t1_lin["pred"]) + 0.5 * poll_consensus_ref, 1)
         st.markdown(f"""
-<div style="background:linear-gradient(135deg,#1a2c50 0%,#1e3461 100%);
-border-radius:10px;padding:24px 32px;text-align:center;">
-  <p style="color:rgba(255,255,255,0.6);font-size:0.72rem;font-weight:700;letter-spacing:1.5px;
-  text-transform:uppercase;margin:0 0 8px;">Estimation consensus · Modèle + Sondages</p>
-  <p style="color:#ffffff;font-size:2.8rem;font-weight:700;margin:0 0 4px;line-height:1;">
-    ~{consensus:.1f} %</p>
-  <p style="color:rgba(255,255,255,0.72);font-size:0.88rem;margin:0;">
-    Abstention T1 2027 estimée · 50% tendance linéaire ({model_val:.1f}%) + 50% sondages ({poll_consensus:.1f}%)
-  </p>
+<div style="background:#f8f3ff;border:1px solid #d9a8e8;border-radius:8px;
+padding:16px 20px;display:flex;align-items:center;gap:16px;">
+  <span style="font-size:1.8rem;">📊</span>
+  <div>
+    <p style="font-weight:600;color:#6a0080;font-size:0.92rem;margin:0 0 2px;">
+      Sondages disponibles : {len(s_t1_ref)} instituts · Consensus ~{consensus_ref}%</p>
+    <p style="color:#52514e;font-size:0.82rem;margin:0;">
+      {' · '.join(f"{r['source']} ({r['intention_abstention']:.1f}%)" for _, r in s_t1_ref.iterrows())}
+      — Analyse complète dans la page <strong>Baromètre 2027</strong> (menu gauche)
+    </p>
+  </div>
 </div>""", unsafe_allow_html=True)
-
-        carte_note(
-            "Méthode consensus : moyenne pondérée des sondages (poids = 1/marge²) combinée à 50% "
-            f"avec la projection linéaire. Sondages utilisés : {', '.join(s_t1['source'].tolist())}. "
-            "Les sondages d'intention ne mesurent pas le comportement réel — ils surestiment "
-            "légèrement l'abstention déclarée vs l'abstention effective."
-        )
         st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("---")
@@ -295,35 +265,38 @@ st.markdown("<br>", unsafe_allow_html=True)
 # RMSE moyen du modèle Ridge en LOYO (~4.7 pp) → fourchette de confiance
 RIDGE_RMSE = 4.1  # mis à jour après enrichissement avec législatives 2017+2022
 
-st.markdown("### Les trois scénarios")
+st.markdown("### Les quatre scénarios")
 st.caption("La fourchette [min–max] représente l'incertitude du modèle (±RMSE moyen en validation LOYO).")
-c1, c2, c3 = st.columns(3, gap="large")
+c1, c2, c3, c4 = st.columns(4, gap="medium")
 
-for col, (sid, (label, color)) in zip([c1, c2, c3], SCENARIOS.items()):
+SCENARIO_SUBTITLES = {
+    "baseline":               "Tendance actuelle maintenue",
+    "abstention_jeunes_+5pp": "Abstention jeunes accélérée",
+    "remobilisation_-4pp":    "Choc politique mobilisateur",
+    "sans_macron_2027":       "Effondrement de l'électorat centriste",
+}
+
+for col, (sid, (label, color)) in zip([c1, c2, c3, c4], SCENARIOS.items()):
     row = df_scen[df_scen.scenario == sid].iloc[0]
     pred = row["abstention_nationale_pred (%)"]
     dmin = row["dept_min (%)"]
     dmax = row["dept_max (%)"]
     ci_low = max(0, pred - RIDGE_RMSE)
     ci_high = pred + RIDGE_RMSE
+    subtitle = SCENARIO_SUBTITLES.get(sid, "")
     with col:
         st.markdown(f"""
-<div style="
-    background: #fcfcfb;
-    border: 1px solid #e1e0d9;
-    border-top: 4px solid {color};
-    border-radius: 8px;
-    padding: 20px 20px 16px;
-    text-align: center;
-">
-  <p style="color: #52514e; font-size: 0.82rem; font-weight: 600;
-            letter-spacing: 0.8px; text-transform: uppercase; margin: 0 0 6px;">{label}</p>
-  <p style="color: #0b0b0b; font-size: 2.2rem; font-weight: 700; margin: 0 0 2px;">{pred:.1f} %</p>
-  <p style="color: {color}; font-size: 0.82rem; font-weight: 600; margin: 0 0 4px;">
-      Fourchette : {ci_low:.0f} – {ci_high:.0f} %
+<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid {color};
+border-radius:8px;padding:18px 16px 14px;text-align:center;">
+  <p style="color:{color};font-size:0.72rem;font-weight:700;letter-spacing:0.8px;
+  text-transform:uppercase;margin:0 0 3px;">{label}</p>
+  <p style="color:#898781;font-size:0.73rem;margin:0 0 10px;line-height:1.3;">{subtitle}</p>
+  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0 0 2px;">{pred:.1f} %</p>
+  <p style="color:{color};font-size:0.8rem;font-weight:600;margin:0 0 4px;">
+      {ci_low:.0f} – {ci_high:.0f} %
   </p>
-  <p style="color: #898781; font-size: 0.78rem; margin: 0;">
-      Depts : {dmin:.1f} % – {dmax:.1f} %
+  <p style="color:#c3c2b7;font-size:0.72rem;margin:0;">
+      depts : {dmin:.1f} – {dmax:.1f} %
   </p>
 </div>
 """, unsafe_allow_html=True)
@@ -351,17 +324,20 @@ for sid, (label, color) in SCENARIOS.items():
 fig_bar.update_layout(
     **PLOTLY_BASE,
     barmode="group",
-    yaxis=dict(**YAXIS_BASE, ticksuffix=" %", range=[0, 32]),
+    yaxis=dict(**YAXIS_BASE, ticksuffix=" %", range=[0, 36]),
     xaxis=dict(**XAXIS_BASE, showgrid=False),
     legend=LEGEND_BASE,
-    height=340,
+    height=360,
 )
 st.plotly_chart(fig_bar, use_container_width=True)
 
 carte_note(
-    "L'écart entre scénarios reste modeste (2,5 pts entre le pire et le meilleur cas), "
-    "ce qui reflète la stabilité structurelle de l'abstention : les évolutions lentes de démographie "
-    "et d'habitudes électorales contraignent davantage la participation que les conjonctures politiques à court terme."
+    "Le scénario « 2027 sans Macron » prédit la plus forte abstention : "
+    "l'effondrement de l'électorat centriste (~27% en 2022) vers des candidats sans équivalent "
+    "devrait pousser une fraction des électeurs à l'abstention. "
+    "L'écart entre remobilisation et sans-Macron illustre l'amplitude du risque électoral (±4 pp). "
+    "Dans tous les cas, les évolutions lentes de démographie et d'habitudes électorales "
+    "restent les principaux déterminants structurels."
 )
 
 st.markdown("<br>", unsafe_allow_html=True)

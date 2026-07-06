@@ -493,10 +493,23 @@ def generate_2027(df_reg: pd.DataFrame, model: RandomForestRegressor, feat_cols:
     s_remob["prev_trend"] -= 3.0
     s_remob = predict(s_remob)
 
+    # ── Scénario 2027 sans Macron ─────────────────────────────────────────────
+    # Hypothèses :
+    # - Macron inéligible (2e mandat) → effondrement du score centre (~27% → ~4%)
+    # - Une part des électeurs centristes se reporte sur l'abstention
+    # - Absence de l'effet "barrage" qui mobilisait en 2017/2022
+    s_macron = base.copy()
+    if "lag_score_centre" in feat_cols:
+        s_macron["lag_score_centre"] = (s_macron["lag_score_centre"] - 22).clip(lower=0)
+    s_macron["lag_taux_abstention"] += 3.0   # report partiel vers l'abstention
+    s_macron["prev_trend"] += 1.5            # tendance accélérée sans ancrage centriste
+    s_macron = predict(s_macron)
+
     scenarios = {
         "baseline": s_base,
         "abstention_jeunes_+5pp": s_jeunes,
         "remobilisation_-4pp": s_remob,
+        "sans_macron_2027": s_macron,
     }
 
     # ── Synthèse nationale ────────────────────────────────────────────────────
@@ -517,9 +530,9 @@ def generate_2027(df_reg: pd.DataFrame, model: RandomForestRegressor, feat_cols:
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     ax = axes[0]
-    colors = ["#1f77b4", "#e74c3c", "#2ca02c"]
+    colors = ["#1f77b4", "#e74c3c", "#2ca02c", "#9b59b6"]
     vals = summary["abstention_nationale_pred (%)"].values
-    bars = ax.bar(summary["scenario"], vals, color=colors, alpha=0.85, width=0.5)
+    bars = ax.bar(summary["scenario"], vals, color=colors[:len(vals)], alpha=0.85, width=0.5)
     for bar, v in zip(bars, vals):
         ax.text(bar.get_x() + bar.get_width() / 2, v + 0.3, f"{v:.1f}%",
                 ha="center", fontsize=11, fontweight="bold")
@@ -529,7 +542,7 @@ def generate_2027(df_reg: pd.DataFrame, model: RandomForestRegressor, feat_cols:
     ax.grid(axis="y", alpha=0.3)
 
     ax = axes[1]
-    for (nom, s), color in zip(scenarios.items(), colors):
+    for (nom, s), color in zip(scenarios.items(), colors[:len(scenarios)]):
         ax.hist(s["abstention_pred"], bins=20, alpha=0.5, label=nom, color=color, density=True)
     ax.set_title("Distribution par département — 2027")
     ax.set_xlabel("Abstention prédite (%)")
