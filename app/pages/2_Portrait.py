@@ -16,7 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from data_loader import load_demography, load_dept_clusters
-from _style import inject_css, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, carte_note
+from _style import inject_css, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, carte_note, section_title
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TABLE_DIR = BASE_DIR / "outputs" / "tables"
@@ -56,13 +56,19 @@ df_clust["dept_code"] = df_clust["dept_code"].astype(str).str.zfill(2)
 annees = sorted(df_map["annee"].unique())
 
 # ── En-tête ─────────────────────────────────────────────────────────────────────
-st.markdown("## 🗺️ Acte 2 — Le portrait des abstentionnistes")
-st.markdown(
-    "Derrière la moyenne nationale se cachent des réalités très différentes. "
-    "Les **DOM-TOM abstiennent deux fois plus** que la métropole. "
-    "Les départements les plus jeunes — souvent les plus précaires — décrochent les premiers."
-)
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("""
+<div style="background:linear-gradient(135deg,#0e7a5a 0%,#1baf7a 100%);
+border-radius:10px;padding:28px 32px 22px;margin-bottom:24px;">
+  <p style="color:rgba(255,255,255,0.6);font-size:0.72rem;font-weight:700;
+  letter-spacing:1.5px;text-transform:uppercase;margin:0 0 6px;">Acte 2 / 3</p>
+  <h1 style="color:#fff;font-size:1.7rem;margin:0 0 10px;border:none;">🗺️ Le portrait</h1>
+  <p style="color:rgba(255,255,255,0.88);font-size:0.95rem;margin:0;max-width:640px;">
+    Derrière la moyenne nationale se cachent des réalités très différentes.
+    Les DOM-TOM abstiennent <strong style="color:#fff;">deux fois plus</strong> que la métropole.
+    Le chômage est le déterminant le plus fort — plus que la démographie.
+  </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ── Contrôles ───────────────────────────────────────────────────────────────────
 col_ctrl, _ = st.columns([2, 3])
@@ -93,7 +99,8 @@ m3.metric("DOM-TOM",    f"{abs_domtom:.1f} %",
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Carte ────────────────────────────────────────────────────────────────────────
-st.markdown(f"### Taux d'abstention T1 {annee_choisie} par département")
+section_title(f"Taux d'abstention T1 {annee_choisie} par département",
+              "Cliquez sur un département pour le détail · Couleur = niveau d'abstention")
 
 try:
     geojson = load_geojson()
@@ -146,7 +153,8 @@ carte_note(
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Graphique : top / flop départements ─────────────────────────────────────────
-st.markdown(f"### Les 10 départements les plus et les moins abstentionnistes en {annee_choisie}")
+section_title(f"Palmarès {annee_choisie}",
+              "10 départements les plus abstentionnistes (rouge) vs les moins (bleu)")
 
 df_sorted = df_annee.sort_values("taux_abstention")
 top10  = df_sorted.tail(10)

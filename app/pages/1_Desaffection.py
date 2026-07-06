@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import streamlit as st
 import plotly.graph_objects as go
 from data_loader import load_participation_nationale, load_scores_familles
-from _style import inject_css, COULEURS_FAMILLES, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, LEGEND_BASE, carte_note
+from _style import inject_css, COULEURS_FAMILLES, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, LEGEND_BASE, carte_note, section_title
 
 st.set_page_config(
     page_title="Acte 1 — La désaffection",
@@ -20,12 +20,19 @@ st.set_page_config(
 inject_css()
 
 # ── En-tête ─────────────────────────────────────────────────────────────────────
-st.markdown("## 🗳️ Acte 1 — La désaffection")
-st.markdown(
-    "L'abstention au premier tour a quasiment **doublé en 30 ans** : de 21 % en 1995 à 26 % en 2022, "
-    "avec un pic historique à 28 % en 2002. Dans le même temps, le paysage politique s'est fragmenté."
-)
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("""
+<div style="background:linear-gradient(135deg,#1c5cab 0%,#2a78d6 100%);
+border-radius:10px;padding:28px 32px 22px;margin-bottom:24px;">
+  <p style="color:rgba(255,255,255,0.6);font-size:0.72rem;font-weight:700;
+  letter-spacing:1.5px;text-transform:uppercase;margin:0 0 6px;">Acte 1 / 3</p>
+  <h1 style="color:#fff;font-size:1.7rem;margin:0 0 10px;border:none;">🗳️ La désaffection</h1>
+  <p style="color:rgba(255,255,255,0.88);font-size:0.95rem;margin:0;max-width:640px;">
+    L'abstention au premier tour a quasiment <strong style="color:#fff;">doublé en 30 ans</strong> :
+    de 21&nbsp;% en 1995 à 26&nbsp;% en 2022.
+    Dans le même temps, le paysage politique s'est profondément fragmenté.
+  </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ── Données ─────────────────────────────────────────────────────────────────────
 df_partic  = load_participation_nationale()
@@ -35,7 +42,8 @@ t1 = df_partic[df_partic.tour == 1].sort_values("annee")
 t2 = df_partic[df_partic.tour == 2].sort_values("annee")
 
 # ── Graphique 1 : courbe d'abstention T1 et T2 ──────────────────────────────────
-st.markdown("### Taux d'abstention national (1995–2022)")
+section_title("Taux d'abstention national (1995–2022)",
+              "Agrégation nationale — inscrits, abstentions T1 et T2")
 
 fig1 = go.Figure()
 fig1.add_trace(go.Scatter(
@@ -79,7 +87,9 @@ carte_note(
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Graphique 2 : scores familles T1 ────────────────────────────────────────────
-st.markdown("### Part des familles politiques au 1er tour (% des exprimés)")
+st.markdown("<br>", unsafe_allow_html=True)
+section_title("Part des familles politiques au 1er tour",
+              "% des suffrages exprimés — filtrez par famille via le sélecteur")
 
 familles_ordre = [
     "Droite", "Centre", "Gauche", "Extrême droite",

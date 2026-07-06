@@ -15,7 +15,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 from data_loader import load_scenarios_2027, load_predictions_2027, load_linear_prediction, load_participation_nationale
-from _style import inject_css, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, LEGEND_BASE, carte_note
+from _style import inject_css, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, LEGEND_BASE, carte_note, section_title
 
 st.set_page_config(
     page_title="Acte 3 — Et 2027 ?",
@@ -63,17 +63,24 @@ LABELS = {
 }
 
 # ── En-tête ─────────────────────────────────────────────────────────────────────
-st.markdown("## 🔮 Acte 3 — Et 2027 ?")
-st.markdown(
-    "Si la tendance structurelle se maintient, l'abstention au premier tour 2027 devrait dépasser **28%**. "
-    "Cette projection repose sur deux approches complémentaires : une **régression linéaire de la tendance** "
-    "(transparente, avec intervalles de confiance explicites) et un **modèle Ridge** "
-    "(intégrant démographie et historique électoral par département)."
-)
+st.markdown("""
+<div style="background:linear-gradient(135deg,#a06c00 0%,#eda100 100%);
+border-radius:10px;padding:28px 32px 22px;margin-bottom:24px;">
+  <p style="color:rgba(255,255,255,0.6);font-size:0.72rem;font-weight:700;
+  letter-spacing:1.5px;text-transform:uppercase;margin:0 0 6px;">Acte 3 / 3</p>
+  <h1 style="color:#fff;font-size:1.7rem;margin:0 0 10px;border:none;">🔮 Et 2027 ?</h1>
+  <p style="color:rgba(255,255,255,0.92);font-size:0.95rem;margin:0;max-width:640px;">
+    Si la tendance se maintient, l'abstention au T1 2027 devrait dépasser
+    <strong style="color:#fff;">28 %</strong>.
+    Deux méthodes complémentaires, des fourchettes honnêtes, un simulateur interactif.
+  </p>
+</div>
+""", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Méthode 1 : régression linéaire nationale ─────────────────────────────────
-st.markdown("### 📈 Méthode 1 — Tendance linéaire (2007–2022)")
+section_title("📈 Méthode 1 — Tendance linéaire (2007–2022)",
+              "Approche transparente avec intervalles de confiance 80% et 95%")
 st.markdown(
     "La façon la plus honnête de projeter : une droite de tendance sur les 4 dernières élections. "
     "Les **intervalles de confiance** montrent l'incertitude réelle — ne croyez pas une prédiction ponctuelle."
@@ -196,7 +203,8 @@ border-radius:8px;padding:20px;text-align:center;">
     st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("---")
-st.markdown("### 🤖 Méthode 2 — Modèle Ridge par département (scénarios)")
+section_title("🤖 Méthode 2 — Modèle Ridge par département",
+              "3 scénarios prédéfinis · fourchette ±4.7 pp (RMSE LOYO du modèle)")
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Tuiles scénarios ─────────────────────────────────────────────────────────────
@@ -239,7 +247,7 @@ for col, (sid, (label, color)) in zip([c1, c2, c3], SCENARIOS.items()):
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Graphique comparatif barres ─────────────────────────────────────────────────
-st.markdown("### Comparaison des scénarios")
+section_title("Comparaison des scénarios")
 
 fig_bar = go.Figure()
 for sid, (label, color) in SCENARIOS.items():
@@ -275,7 +283,8 @@ carte_note(
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Carte prédictions 2027 ───────────────────────────────────────────────────────
-st.markdown("### Carte des prédictions 2027 par département")
+section_title("Carte des prédictions 2027",
+              "Abstention prédite par département pour le scénario sélectionné")
 
 scenario_choisi = st.radio(
     "Scénario à afficher sur la carte :",
@@ -335,7 +344,9 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ── Simulateur interactif ─────────────────────────────────────────────────────
-st.markdown("### 🎛️ Simulateur personnalisé")
+st.markdown("---")
+section_title("🎛️ Simulateur personnalisé",
+              "Ajustez les paramètres — le modèle Ridge recalcule en temps réel")
 st.markdown(
     "Ajustez les paramètres ci-dessous pour construire votre propre scénario 2027. "
     "Le modèle **Ridge** (le plus stable en validation temporelle) recalcule l'abstention en temps réel."
