@@ -14,7 +14,9 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
-from data_loader import load_scenarios_2027, load_predictions_2027, load_linear_prediction, load_participation_nationale
+from data_loader import (load_scenarios_2027, load_predictions_2027,
+                         load_linear_prediction, load_participation_nationale,
+                         load_sondages_2027)
 from _style import inject_css, PLOTLY_BASE, XAXIS_BASE, YAXIS_BASE, LEGEND_BASE, carte_note, section_title
 
 st.set_page_config(
@@ -49,6 +51,11 @@ try:
     df_partic = load_participation_nationale()
 except Exception:
     df_partic = None
+
+try:
+    df_sondages = load_sondages_2027()
+except Exception:
+    df_sondages = None
 
 SCENARIOS = {
     "baseline":              ("Scénario de base",                "#2a78d6"),
@@ -181,26 +188,103 @@ border-radius:8px;padding:20px;text-align:center;">
                           f"IC 80% : [{t1_data['ci80_low']:.1f}–{t1_data['ci80_high']:.1f}%]<extra></extra>",
         ))
 
+    # ── Sondages 2027 sur la courbe ──────────────────────────────────────────────
+    if df_sondages is not None:
+        s_t1 = df_sondages[df_sondages["tour"] == 1]
+        # Décale légèrement en x pour que les 2 points soient lisibles
+        x_offsets = [-0.3, 0.3]
+        colors_poll = ["#9b59b6", "#e34948"]
+        symbols_poll = ["diamond", "triangle-up"]
+        for (_, row), dx, pc, sym in zip(s_t1.iterrows(), x_offsets, colors_poll, symbols_poll):
+            fig_trend.add_trace(go.Scatter(
+                x=[2027 + dx],
+                y=[row["intention_abstention"]],
+                mode="markers",
+                name=f"Sondage — {row['source']} ({row['date_label']})",
+                marker=dict(size=13, color=pc, symbol=sym,
+                            line=dict(width=1.5, color="#ffffff")),
+                error_y=dict(type="constant", value=row["marge"],
+                             color=pc, thickness=2, width=6),
+                hovertemplate=(
+                    f"<b>Sondage {row['date_label']}</b><br>"
+                    f"Source : {row['source']}<br>"
+                    f"Intention d'abstention T1 : {row['intention_abstention']:.1f} %<br>"
+                    f"Marge : ±{row['marge']:.1f} pp<extra></extra>"
+                ),
+            ))
+
     fig_trend.update_layout(
         **PLOTLY_BASE,
-        yaxis=dict(**YAXIS_BASE, ticksuffix=" %", range=[15, 45],
+        yaxis=dict(**YAXIS_BASE, ticksuffix=" %", range=[15, 48],
                    title="Taux d'abstention (%)"),
         xaxis=dict(**XAXIS_BASE, range=[1993, 2030], dtick=5,
                    title="Année de l'élection"),
-        height=380,
-        legend=LEGEND_BASE,
+        height=420,
+        legend=dict(**LEGEND_BASE, y=1.08),
     )
     fig_trend.add_vline(x=2022.5, line_dash="dot", line_color="#52514e", line_width=1,
                         annotation_text="→ Projection", annotation_position="top right")
     st.plotly_chart(fig_trend, use_container_width=True)
 
     carte_note(
-        f"T1 2027 : {t1_lin['pred']:.1f}% [IC 80% : {t1_lin['ci80_low']:.1f}–{t1_lin['ci80_high']:.1f}%] "
-        f"| T2 : {t2_lin['pred']:.1f}% [IC 80% : {t2_lin['ci80_low']:.1f}–{t2_lin['ci80_high']:.1f}%]. "
-        "L'intervalle T1 est très large (14 points) car le pic de 2002 crée de la variance. "
-        "Le T2 est bien contraint (+0.8% de pente par an, R²=0.998)."
+        f"T1 2027 — Tendance linéaire : {t1_lin['pred']:.1f}% [IC 80% : {t1_lin['ci80_low']:.1f}–{t1_lin['ci80_high']:.1f}%]. "
+        "Les sondages d'intention d'abstention (losange violet, triangle rouge) convergent vers une fourchette 31–34%, "
+        "au-dessus de la seule projection linéaire — signal d'une désaffection accélérée."
     )
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Section sondages : cartes + consensus ───────────────────────────────────
+    if df_sondages is not None:
+        section_title("📊 Sondages d'intention d'abstention 2027",
+                      "Deux instituts indépendants — données illustratives à titre académique")
+
+        s_t1 = df_sondages[df_sondages["tour"] == 1].reset_index(drop=True)
+        poll_colors = ["#9b59b6", "#e34948"]
+
+        cols_polls = st.columns(len(s_t1))
+        for col, (_, row), pc in zip(cols_polls, s_t1.iterrows(), poll_colors):
+            col.markdown(f"""
+<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid {pc};
+border-radius:8px;padding:20px;text-align:center;">
+  <p style="color:#52514e;font-size:0.7rem;font-weight:700;letter-spacing:1px;
+  text-transform:uppercase;margin:0 0 2px;">{row['source']}</p>
+  <p style="color:#898781;font-size:0.78rem;margin:0 0 10px;">{row['date_label']}</p>
+  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0 0 2px;">
+    {row['intention_abstention']:.1f} %</p>
+  <p style="color:{pc};font-size:0.82rem;font-weight:600;margin:0 0 6px;">
+    ± {row['marge']:.1f} pp</p>
+  <p style="color:#898781;font-size:0.75rem;margin:0;">
+    Fourchette : {row['intention_abstention'] - row['marge']:.1f} – {row['intention_abstention'] + row['marge']:.1f} %
+  </p>
+</div>""", unsafe_allow_html=True)
+
+        # Consensus pondéré (poids = 1/marge²)
+        weights = 1.0 / (s_t1["marge"] ** 2)
+        poll_consensus = (s_t1["intention_abstention"] * weights).sum() / weights.sum()
+        model_val = float(t1_lin["pred"])
+        # Consensus final : 50% modèle + 50% moyenne pondérée des sondages
+        consensus = 0.5 * model_val + 0.5 * poll_consensus
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"""
+<div style="background:linear-gradient(135deg,#1a2c50 0%,#1e3461 100%);
+border-radius:10px;padding:24px 32px;text-align:center;">
+  <p style="color:rgba(255,255,255,0.6);font-size:0.72rem;font-weight:700;letter-spacing:1.5px;
+  text-transform:uppercase;margin:0 0 8px;">Estimation consensus · Modèle + Sondages</p>
+  <p style="color:#ffffff;font-size:2.8rem;font-weight:700;margin:0 0 4px;line-height:1;">
+    ~{consensus:.1f} %</p>
+  <p style="color:rgba(255,255,255,0.72);font-size:0.88rem;margin:0;">
+    Abstention T1 2027 estimée · 50% tendance linéaire ({model_val:.1f}%) + 50% sondages ({poll_consensus:.1f}%)
+  </p>
+</div>""", unsafe_allow_html=True)
+
+        carte_note(
+            "Méthode consensus : moyenne pondérée des sondages (poids = 1/marge²) combinée à 50% "
+            f"avec la projection linéaire. Sondages utilisés : {', '.join(s_t1['source'].tolist())}. "
+            "Les sondages d'intention ne mesurent pas le comportement réel — ils surestiment "
+            "légèrement l'abstention déclarée vs l'abstention effective."
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("---")
 section_title("🤖 Méthode 2 — Modèle Ridge par département",
@@ -307,9 +391,10 @@ try:
         hover_name="dept_nom_election",
         hover_data={"abstention_pred": ":.1f", "dept_code": False},
         color_continuous_scale=[
-            [0.0, "#cde2fb"],
-            [0.5, "#3987e5"],
-            [1.0, "#0d366b"],
+            [0.00, "#1baf7a"],  # vert — faible abstention
+            [0.30, "#eda100"],  # orange — abstention moyenne
+            [0.65, "#e87b4a"],  # orange foncé
+            [1.00, "#c0392b"],  # rouge — forte abstention
         ],
         range_color=[18, 36],
         labels={"abstention_pred": "Abstention prédite (%)"},
@@ -460,7 +545,7 @@ else:
             color="abstention_pred",
             hover_name="dept_nom_election",
             hover_data={"abstention_pred": ":.1f", "dept_code": False},
-            color_continuous_scale=[[0.0, "#cde2fb"], [0.5, "#3987e5"], [1.0, "#0d366b"]],
+            color_continuous_scale=[[0.00, "#1baf7a"], [0.30, "#eda100"], [0.65, "#e87b4a"], [1.00, "#c0392b"]],
             range_color=[18, 36],
             labels={"abstention_pred": "Abstention prédite (%)"},
         )

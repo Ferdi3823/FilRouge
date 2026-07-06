@@ -62,3 +62,8 @@ def load_abstention_dept() -> pd.DataFrame:
 @st.cache_data
 def load_linear_prediction() -> pd.DataFrame:
     return pd.read_csv(TBL_DIR / "linear_trend_prediction.csv")
+
+
+@st.cache_data
+def load_sondages_2027() -> pd.DataFrame:
+    return pd.read_csv(BASE_DIR / "data" / "sondages_2027.csv")
