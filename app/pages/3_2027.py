@@ -209,7 +209,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Tuiles scénarios ─────────────────────────────────────────────────────────────
 # RMSE moyen du modèle Ridge en LOYO (~4.7 pp) → fourchette de confiance
-RIDGE_RMSE = 4.7
+RIDGE_RMSE = 4.1  # mis à jour après enrichissement avec législatives 2017+2022
 
 st.markdown("### Les trois scénarios")
 st.caption("La fourchette [min–max] représente l'incertitude du modèle (±RMSE moyen en validation LOYO).")

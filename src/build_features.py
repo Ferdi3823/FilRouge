@@ -157,7 +157,53 @@ def regression_feature_cols(df: pd.DataFrame) -> list:
     demo = ["pct_jeunes", "pct_actifs", "pct_seniors", "ratio_seniors_jeunes"]
     lags = [c for c in df.columns if c.startswith("lag_taux_") or c.startswith("lag_score_")]
     trend = ["prev_trend"]
-    return [c for c in demo + lags + trend if c in df.columns]
+    extra = ["is_legislatives"] if "is_legislatives" in df.columns else []
+    return [c for c in demo + lags + trend + extra if c in df.columns]
+
+
+def augment_with_legislatives(df_pres: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ajoute les législatives 2017 et 2022 (T1) au dataset de régression.
+
+    Les features de lag pour chaque ligne législative sont empruntées à la
+    présidentielle T1 de la même année (qui a eu lieu AVANT les législatives).
+    is_legislatives=1 permet au modèle d'apprendre l'offset systématique.
+    """
+    leg_file = TABLE_DIR / "legislatives_dept.csv"
+    if not leg_file.exists():
+        print("  [INFO] legislatives_dept.csv absent — enrichissement ignoré.")
+        df_pres["is_legislatives"] = 0
+        return df_pres
+
+    df_leg_raw = pd.read_csv(leg_file)
+    df_leg_raw = df_leg_raw[df_leg_raw["tour"] == 1].copy()
+
+    # Features de la présidentielle T1 de la même année (source des lags)
+    lag_cols = ["lag_taux_abstention", "prev_trend"] + \
+               [c for c in df_pres.columns if c.startswith("lag_score_")]
+    demo_cols = ["pct_jeunes", "pct_actifs", "pct_seniors",
+                 "ratio_seniors_jeunes", "pop_ens_total"]
+
+    pres_feats = df_pres[["annee", "dept_code"] + demo_cols + lag_cols].copy()
+
+    df_leg_merged = df_leg_raw.merge(pres_feats, on=["annee", "dept_code"], how="inner")
+    df_leg_merged["is_legislatives"] = 1
+
+    df_pres_out = df_pres.copy()
+    df_pres_out["is_legislatives"] = 0
+
+    # Concat sans restreindre aux colonnes communes : les colonnes absentes des
+    # législatives (ex. dept_nom_election, scores politiques T1) sont remplies par NaN.
+    combined = pd.concat(
+        [df_pres_out, df_leg_merged],
+        ignore_index=True, sort=False,
+    ).sort_values(["dept_code", "annee", "is_legislatives"]).reset_index(drop=True)
+
+    n_added = len(df_leg_merged)
+    print(f"  Enrichissement législatives T1 : +{n_added} lignes "
+          f"({df_leg_merged['annee'].nunique()} années, "
+          f"{df_leg_merged['dept_code'].nunique()} depts en moy.)")
+    return combined
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -167,11 +213,18 @@ def regression_feature_cols(df: pd.DataFrame) -> list:
 def loyo_cv(df: pd.DataFrame, feat_cols: list) -> pd.DataFrame:
     """
     Validation temporelle : entraîne sur N-1 années, teste sur la Nème.
-    Seules les années ayant des features complètes (≥ 2007) sont testées.
+    Seules les années présidentielles (is_legislatives==0) sont utilisées comme fold test.
+    Les législatives d'années antérieures enrichissent l'entraînement.
     """
     TARGET = "taux_abstention"
     valid = df.dropna(subset=feat_cols + [TARGET]).copy()
-    years = sorted(valid["annee"].unique())
+    # Folds de test = présidentielles uniquement
+    has_leg_flag = "is_legislatives" in valid.columns
+    if has_leg_flag:
+        test_years = sorted(valid[valid["is_legislatives"] == 0]["annee"].unique())
+    else:
+        test_years = sorted(valid["annee"].unique())
+    years = test_years
 
     # Modèles : Ridge (avec scaling), arbres (sans scaling)
     model_defs = {
@@ -182,8 +235,13 @@ def loyo_cv(df: pd.DataFrame, feat_cols: list) -> pd.DataFrame:
 
     rows = []
     for test_year in years:
+        # Exclut TOUTES les lignes de l'année test (présidentielle + législatives)
         train = valid[valid["annee"] != test_year]
-        test = valid[valid["annee"] == test_year]
+        # Test uniquement sur la présidentielle T1 de l'année
+        if has_leg_flag:
+            test = valid[(valid["annee"] == test_year) & (valid["is_legislatives"] == 0)]
+        else:
+            test = valid[valid["annee"] == test_year]
         if len(train) < 20 or len(test) == 0:
             continue
 
@@ -379,10 +437,17 @@ def generate_2027(df_reg: pd.DataFrame, model: RandomForestRegressor, feat_cols:
     - lag_* mis à jour avec les valeurs réelles 2022
     - prev_trend = variation observée 2017→2022
     """
-    base = df_reg[df_reg["annee"] == 2022].copy()
+    # Présidentielle 2022 uniquement (pas les législatives)
+    if "is_legislatives" in df_reg.columns:
+        base = df_reg[(df_reg["annee"] == 2022) & (df_reg["is_legislatives"] == 0)].copy()
+    else:
+        base = df_reg[df_reg["annee"] == 2022].copy()
     if base.empty:
         print("  [WARN] Données 2022 introuvables dans df_reg.")
         return pd.DataFrame()
+    # La prédiction cible une présidentielle 2027
+    if "is_legislatives" in base.columns:
+        base["is_legislatives"] = 0
 
     # prev_trend pour 2027 = variation 2017→2022
     # Calculé AVANT mise à jour des lags (lag_taux_abstention = 2017 ici)
@@ -619,20 +684,41 @@ def main():
 
     # ── 1. Feature engineering ─────────────────────────────────────────────────
     print("\n[1] Feature engineering...")
-    df_reg = build_regression_dataset(df_demo, df_cand)
+    df_reg_base = build_regression_dataset(df_demo, df_cand)
+    feat_cols_base = regression_feature_cols(df_reg_base)
+
+    # Enrichissement avec législatives 2017 + 2022
+    df_reg = augment_with_legislatives(df_reg_base)
     feat_cols = regression_feature_cols(df_reg)
-    print(f"  {len(feat_cols)} features : {feat_cols}")
+    n_leg = (df_reg["is_legislatives"] == 1).sum() if "is_legislatives" in df_reg.columns else 0
+    print(f"  {len(feat_cols)} features dont is_legislatives")
+    print(f"  Dataset : {len(df_reg)} lignes "
+          f"({len(df_reg) - n_leg} présidentielles + {n_leg} législatives)")
     df_reg.to_csv(TABLE_DIR / "regression_dataset.csv", index=False)
 
-    # ── 2. LOYO Cross-validation ───────────────────────────────────────────────
+    # ── 2. LOYO Cross-validation (avant / après enrichissement) ────────────────
     print("\n[2] Leave-One-Year-Out CV...")
-    cv = loyo_cv(df_reg, feat_cols)
+    cv_base = loyo_cv(df_reg_base, feat_cols_base)
+    cv      = loyo_cv(df_reg,      feat_cols)
+
+    print("\n  ── Présidentielles seules (baseline) ──")
+    print(cv_base.to_string(index=False))
+    print("\n  ── Avec législatives 2017+2022 (étendu) ──")
     print(cv.to_string(index=False))
+
+    # Comparaison Ridge RMSE
+    r_base = cv_base[cv_base["model"] == "Ridge"]["RMSE"].mean()
+    r_ext  = cv[cv["model"] == "Ridge"]["RMSE"].mean()
+    print(f"\n  Ridge RMSE baseline   : {r_base:.3f} pp")
+    print(f"  Ridge RMSE enrichi    : {r_ext:.3f} pp  "
+          f"({'amélioration' if r_ext < r_base else 'dégradation'} "
+          f"de {abs(r_ext - r_base):.3f} pp)")
+
     cv.to_csv(TABLE_DIR / "loyo_cv_results.csv", index=False)
     plot_loyo(cv)
 
     # Synthèse interprétative LOYO
-    ridge_rmse = cv[cv["model"] == "Ridge"]["RMSE"].mean()
+    ridge_rmse = r_ext
     rf_rmse = cv[cv["model"] == "RandomForest"]["RMSE"].mean()
     gb_rmse = cv[cv["model"] == "GradientBoosting"]["RMSE"].mean()
     best_model_name = min(
@@ -643,11 +729,10 @@ def main():
     print(f"    Ridge             : {ridge_rmse:.3f} pp")
     print(f"    RandomForest      : {rf_rmse:.3f} pp")
     print(f"    GradientBoosting  : {gb_rmse:.3f} pp")
-    print(f"  → Modèle le plus stable en généralisation : {best_model_name}")
-    print(f"  Note : R² négatifs attendus avec n=6 années (variance inter-années élevée).")
+    print(f"  → Modèle le plus stable : {best_model_name}")
 
     # ── 3. Modèle final ────────────────────────────────────────────────────────
-    print("\n[3] Entraînement modèle final (toutes années)...")
+    print("\n[3] Entraînement modèle final (toutes années, données enrichies)...")
     model = train_final_rf(df_reg, feat_cols)
     model_ridge = train_final_ridge(df_reg, feat_cols)
     plot_importances(model, feat_cols)
