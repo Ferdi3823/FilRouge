@@ -211,10 +211,33 @@ def loyo_cv(df: pd.DataFrame, feat_cols: list) -> pd.DataFrame:
 
 
 def train_final_rf(df: pd.DataFrame, feat_cols: list) -> RandomForestRegressor:
-    """RandomForest entraîné sur toutes les années disponibles."""
+    """
+    Modèle final : RandomForest entraîné sur toutes les années disponibles.
+    En LOYO, Ridge est plus stable mais RF capture mieux les effets non-linéaires
+    sur le jeu complet. On préserve Ridge pour les prédictions de scénarios
+    (voir train_final_ridge) car la généralisation inter-années reste incertaine.
+    """
     TARGET = "taux_abstention"
     valid = df.dropna(subset=feat_cols + [TARGET])
     model = RandomForestRegressor(n_estimators=500, max_depth=5, random_state=42)
+    model.fit(valid[feat_cols].values, valid[TARGET].values)
+    return model
+
+
+def train_final_ridge(df: pd.DataFrame, feat_cols: list):
+    """
+    Ridge entraîné sur toutes les années disponibles.
+    Préféré pour les projections 2027 : le plus stable en LOYO (RMSE moyen plus bas),
+    malgré des R² négatifs qui reflètent la limite structurelle de 6 points de données.
+    """
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+    TARGET = "taux_abstention"
+    valid = df.dropna(subset=feat_cols + [TARGET])
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("ridge", Ridge(alpha=1.0)),
+    ])
     model.fit(valid[feat_cols].values, valid[TARGET].values)
     return model
 
@@ -249,12 +272,20 @@ def plot_importances(model: RandomForestRegressor, feat_cols: list):
 # 3. CLUSTERING — Profils de départements
 # ═══════════════════════════════════════════════════════════════════════════════
 
+DOM_CODES = {"971", "972", "973", "974", "975", "976"}
+
+
 def build_clustering_dataset(df_demo: pd.DataFrame, df_cand: pd.DataFrame) -> pd.DataFrame:
     """
-    Agrège l'historique 1995-2022 par département.
+    Agrège l'historique 1995-2022 par département (métropole uniquement).
     Features : moyennes démographiques + scores moyens familles clés + delta abstention.
+    Les DOM sont exclus pour éviter un clustering trivial métropole vs outre-mer.
     """
-    t1 = df_demo[(df_demo["tour"] == 1) & df_demo["pop_ens_total"].notna()].copy()
+    t1 = df_demo[
+        (df_demo["tour"] == 1)
+        & df_demo["pop_ens_total"].notna()
+        & ~df_demo["dept_code"].astype(str).isin(DOM_CODES)
+    ].copy()
 
     base = t1.groupby("dept_code").agg(
         dept_nom=("dept_nom_election", "first"),
@@ -482,10 +513,40 @@ def main():
     cv.to_csv(TABLE_DIR / "loyo_cv_results.csv", index=False)
     plot_loyo(cv)
 
+    # Synthèse interprétative LOYO
+    ridge_rmse = cv[cv["model"] == "Ridge"]["RMSE"].mean()
+    rf_rmse = cv[cv["model"] == "RandomForest"]["RMSE"].mean()
+    gb_rmse = cv[cv["model"] == "GradientBoosting"]["RMSE"].mean()
+    best_model_name = min(
+        [("Ridge", ridge_rmse), ("RandomForest", rf_rmse), ("GradientBoosting", gb_rmse)],
+        key=lambda x: x[1]
+    )[0]
+    print(f"\n  Synthèse LOYO (RMSE moyen) :")
+    print(f"    Ridge             : {ridge_rmse:.3f} pp")
+    print(f"    RandomForest      : {rf_rmse:.3f} pp")
+    print(f"    GradientBoosting  : {gb_rmse:.3f} pp")
+    print(f"  → Modèle le plus stable en généralisation : {best_model_name}")
+    print(f"  Note : R² négatifs attendus avec n=6 années (variance inter-années élevée).")
+
     # ── 3. Modèle final ────────────────────────────────────────────────────────
     print("\n[3] Entraînement modèle final (toutes années)...")
     model = train_final_rf(df_reg, feat_cols)
+    model_ridge = train_final_ridge(df_reg, feat_cols)
     plot_importances(model, feat_cols)
+    print(f"  Ridge également entraîné pour les projections (modèle le plus stable en LOYO).")
+
+    # Sauvegarde du modèle Ridge pour le simulateur Streamlit
+    try:
+        import joblib
+        MODEL_DIR = BASE_DIR / "outputs" / "models"
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        joblib.dump(model_ridge, MODEL_DIR / "ridge_pipeline.joblib")
+        import json as _json
+        with open(MODEL_DIR / "feat_cols.json", "w", encoding="utf-8") as _f:
+            _json.dump(feat_cols, _f)
+        print(f"  Modèle sauvegardé → {MODEL_DIR / 'ridge_pipeline.joblib'}")
+    except ImportError:
+        print("  [WARN] joblib non disponible — modèle non sauvegardé.")
 
     # ── 4. Clustering ──────────────────────────────────────────────────────────
     print("\n[4] Clustering des départements...")
