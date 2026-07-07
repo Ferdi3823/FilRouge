@@ -229,8 +229,8 @@ try:
     padding:16px 14px 14px; height:210px; overflow:hidden;
 ">
   <p style="color:#0b0b0b;font-size:0.95rem;font-weight:700;margin:0 0 6px;">{name}</p>
-  <p style="color:#52514e;font-size:0.78rem;margin:0 0 8px;">{desc}</p>
-  <p style="color:#898781;font-size:0.75rem;margin:0;"><em>{n} département{'s' if n>1 else ''}</em></p>
+  <p style="color:#3a3a38;font-size:0.83rem;line-height:1.5;margin:0 0 10px;">{desc}</p>
+  <p style="color:#5a5a58;font-size:0.82rem;font-weight:500;margin:0;"><em>{n} département{'s' if n>1 else ''}</em></p>
 </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)

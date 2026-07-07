@@ -80,7 +80,7 @@ border-radius:10px;padding:28px 32px 22px;margin-bottom:24px;">
   <h1 style="color:#fff;font-size:1.7rem;margin:0 0 10px;border:none;">🔮 Et 2027 ?</h1>
   <p style="color:rgba(255,255,255,0.92);font-size:0.95rem;margin:0;max-width:640px;">
     Si la tendance se maintient, l'abstention au T1 2027 devrait dépasser
-    <strong style="color:#fff;">28 %</strong>.
+    <strong style="color:#fff;">29 %</strong>.
     Deux méthodes complémentaires, des fourchettes honnêtes, un simulateur interactif.
   </p>
 </div>
@@ -102,15 +102,15 @@ if df_linpred is not None and df_partic is not None:
     # KPI fourchettes
     kc1, kc2 = st.columns(2)
     kc1.markdown(f"""
-<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid #2a78d6;
+<div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid #2563eb;
 border-radius:8px;padding:20px;text-align:center;">
-  <p style="color:#52514e;font-size:0.78rem;font-weight:600;letter-spacing:0.8px;
-  text-transform:uppercase;margin:0 0 4px;">Abstention T1 2027</p>
-  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0;">{t1_lin['pred']:.1f} %</p>
-  <p style="color:#2a78d6;font-size:0.85rem;margin:4px 0 0;">
+  <p style="color:#3a3a38;font-size:0.8rem;font-weight:700;letter-spacing:0.8px;
+  text-transform:uppercase;margin:0 0 6px;">Abstention T1 2027</p>
+  <p style="color:#0b0b0b;font-size:2.1rem;font-weight:800;margin:0;">{t1_lin['pred']:.1f} %</p>
+  <p style="color:#2563eb;font-size:0.88rem;font-weight:600;margin:6px 0 0;">
     IC 80% : {t1_lin['ci80_low']:.1f} % – {t1_lin['ci80_high']:.1f} %
   </p>
-  <p style="color:#898781;font-size:0.75rem;margin:2px 0 0;">
+  <p style="color:#5a5a58;font-size:0.8rem;margin:3px 0 0;">
     IC 95% : {t1_lin['ci95_low']:.1f} % – {t1_lin['ci95_high']:.1f} %
   </p>
 </div>""", unsafe_allow_html=True)
@@ -118,13 +118,13 @@ border-radius:8px;padding:20px;text-align:center;">
     kc2.markdown(f"""
 <div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid #ff7f0e;
 border-radius:8px;padding:20px;text-align:center;">
-  <p style="color:#52514e;font-size:0.78rem;font-weight:600;letter-spacing:0.8px;
-  text-transform:uppercase;margin:0 0 4px;">Abstention T2 2027</p>
-  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0;">{t2_lin['pred']:.1f} %</p>
-  <p style="color:#e07020;font-size:0.85rem;margin:4px 0 0;">
+  <p style="color:#3a3a38;font-size:0.8rem;font-weight:700;letter-spacing:0.8px;
+  text-transform:uppercase;margin:0 0 6px;">Abstention T2 2027</p>
+  <p style="color:#0b0b0b;font-size:2.1rem;font-weight:800;margin:0;">{t2_lin['pred']:.1f} %</p>
+  <p style="color:#e07020;font-size:0.88rem;font-weight:600;margin:6px 0 0;">
     IC 80% : {t2_lin['ci80_low']:.1f} % – {t2_lin['ci80_high']:.1f} %
   </p>
-  <p style="color:#898781;font-size:0.75rem;margin:2px 0 0;">
+  <p style="color:#5a5a58;font-size:0.8rem;margin:3px 0 0;">
     IC 95% : {t2_lin['ci95_low']:.1f} % – {t2_lin['ci95_high']:.1f} %
   </p>
 </div>""", unsafe_allow_html=True)
@@ -222,7 +222,7 @@ border-radius:8px;padding:20px;text-align:center;">
         xaxis=dict(**XAXIS_BASE, range=[1993, 2030], dtick=5,
                    title="Année de l'élection"),
         height=420,
-        legend=dict(**LEGEND_BASE, y=1.08),
+        legend={**LEGEND_BASE, "y": 1.08},
     )
     fig_trend.add_vline(x=2022.5, line_dash="dot", line_color="#52514e", line_width=1,
                         annotation_text="→ Projection", annotation_position="top right")
@@ -288,15 +288,15 @@ for col, (sid, (label, color)) in zip([c1, c2, c3, c4], SCENARIOS.items()):
         st.markdown(f"""
 <div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid {color};
 border-radius:8px;padding:18px 16px 14px;text-align:center;">
-  <p style="color:{color};font-size:0.72rem;font-weight:700;letter-spacing:0.8px;
-  text-transform:uppercase;margin:0 0 3px;">{label}</p>
-  <p style="color:#898781;font-size:0.73rem;margin:0 0 10px;line-height:1.3;">{subtitle}</p>
-  <p style="color:#0b0b0b;font-size:2rem;font-weight:700;margin:0 0 2px;">{pred:.1f} %</p>
-  <p style="color:{color};font-size:0.8rem;font-weight:600;margin:0 0 4px;">
+  <p style="color:{color};font-size:0.75rem;font-weight:700;letter-spacing:0.8px;
+  text-transform:uppercase;margin:0 0 4px;">{label}</p>
+  <p style="color:#5a5a58;font-size:0.8rem;margin:0 0 12px;line-height:1.35;">{subtitle}</p>
+  <p style="color:#0b0b0b;font-size:2rem;font-weight:800;margin:0 0 4px;">{pred:.1f} %</p>
+  <p style="color:{color};font-size:0.83rem;font-weight:600;margin:0 0 6px;">
       {ci_low:.0f} – {ci_high:.0f} %
   </p>
-  <p style="color:#c3c2b7;font-size:0.72rem;margin:0;">
-      depts : {dmin:.1f} – {dmax:.1f} %
+  <p style="color:#7a7975;font-size:0.78rem;margin:0;">
+      dép. extrêmes : {dmin:.1f} – {dmax:.1f} %
   </p>
 </div>
 """, unsafe_allow_html=True)

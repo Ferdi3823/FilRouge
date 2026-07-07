@@ -73,18 +73,18 @@ for col, (_, row), pc in zip(cols, s_t1.iterrows(), POLL_COLORS):
     col.markdown(f"""
 <div style="background:#fcfcfb;border:1px solid #e1e0d9;border-top:4px solid {pc};
 border-radius:10px;padding:24px;text-align:center;height:100%;">
-  <p style="color:#898781;font-size:0.68rem;font-weight:700;letter-spacing:1.2px;
-  text-transform:uppercase;margin:0 0 2px;">Sondage</p>
-  <p style="color:#0b0b0b;font-size:0.9rem;font-weight:600;margin:0 0 6px;
+  <p style="color:#5a5a58;font-size:0.72rem;font-weight:700;letter-spacing:1.2px;
+  text-transform:uppercase;margin:0 0 4px;">Sondage</p>
+  <p style="color:#0b0b0b;font-size:0.95rem;font-weight:700;margin:0 0 4px;
   line-height:1.3;">{row['source']}</p>
-  <p style="color:{pc};font-size:0.82rem;font-weight:600;margin:0 0 14px;">
+  <p style="color:{pc};font-size:0.85rem;font-weight:600;margin:0 0 14px;">
     {row['date_label']}</p>
-  <p style="color:#0b0b0b;font-size:2.6rem;font-weight:700;margin:0 0 2px;line-height:1;">
+  <p style="color:#0b0b0b;font-size:2.6rem;font-weight:800;margin:0 0 2px;line-height:1;">
     {row['intention_abstention']:.1f} %</p>
-  <p style="color:#52514e;font-size:0.85rem;font-weight:500;margin:0 0 10px;">
+  <p style="color:#3a3a38;font-size:0.88rem;font-weight:500;margin:0 0 12px;">
     intention d'abstention T1</p>
   <div style="background:{pc}18;border:1px solid {pc}44;border-radius:6px;
-  padding:8px 12px;font-size:0.8rem;color:{pc};font-weight:600;">
+  padding:8px 12px;font-size:0.83rem;color:{pc};font-weight:600;">
     Marge : ± {row['marge']:.1f} pp
     &nbsp;·&nbsp;
     {row['intention_abstention']-row['marge']:.1f} – {row['intention_abstention']+row['marge']:.1f} %
